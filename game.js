@@ -508,11 +508,12 @@
     // Much denser spawn rate: generates true monster hordes
     const interval = Math.max(0.07, 0.42 - (gameTime / 360) * 0.32);
 
-    if (spawnTimer >= interval && enemies.length < 450) {
+    if (spawnTimer >= interval && enemies.length < 185) {
       spawnTimer = 0;
-      // Scales from 3 to 18 enemies per spawn burst
-      const count = 2 + Math.floor(gameTime / 25) * 2;
+      // Scales from 2 to 12 enemies per spawn burst
+      const count = 2 + Math.min(10, Math.floor(gameTime / 30) * 2);
       for (let i = 0; i < count; i++) {
+        if (enemies.length >= 185) break;
         spawnRandomEnemy();
       }
     }
@@ -520,7 +521,7 @@
     // Periodic Massive Swarm Invasions (Surrounding Rings of Monsters)
     if (gameTime >= nextSwarmTime) {
       nextSwarmTime += 40; // Wave every 40s
-      spawnSwarmRing(35 + Math.min(45, Math.floor(gameTime / 10)));
+      spawnSwarmRing(28 + Math.min(28, Math.floor(gameTime / 15)));
     }
 
     // Boss spawns
@@ -755,10 +756,26 @@
     }
   }
 
+  // O(N) fast closest enemy finder using squared distance (Zero array allocation, zero Math.sqrt)
+  function getClosestEnemy(x, y, maxDistSq = Infinity) {
+    let closest = null;
+    let minDistSq = maxDistSq;
+    for (let i = 0; i < enemies.length; i++) {
+      const e = enemies[i];
+      const dx = e.x - x;
+      const dy = e.y - y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        closest = e;
+      }
+    }
+    return closest;
+  }
+
   function fireBlaster(cfg) {
     if (enemies.length === 0) return;
-    const sorted = [...enemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
-    const target = sorted[0];
+    const target = getClosestEnemy(player.x, player.y);
     if (!target) return;
 
     const baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
@@ -789,11 +806,19 @@
       const bx = player.x + Math.cos(a) * cfg.radius;
       const by = player.y + Math.sin(a) * cfg.radius;
 
-      for (const e of enemies) {
-        if (Math.hypot(e.x - bx, e.y - by) < e.radius + 14) {
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const e = enemies[j];
+        if (!e) continue;
+        const hitR = e.radius + 14;
+        const dx = e.x - bx;
+        const dy = e.y - by;
+        if (Math.abs(dx) > hitR || Math.abs(dy) > hitR) continue;
+        if (dx * dx + dy * dy < hitR * hitR) {
           damageEnemy(e, cfg.damage * player.damageMult * 0.25);
           window.soundFX.blade();
-          window.particleSystem.addExplosion(bx, by, '#39ff14', 2);
+          if (Math.random() < 0.25) {
+            window.particleSystem.addExplosion(bx, by, '#39ff14', 2);
+          }
         }
       }
     }
@@ -801,8 +826,7 @@
 
   function fireLightning(cfg) {
     if (enemies.length === 0) return;
-    const sorted = [...enemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
-    let current = sorted[0];
+    let current = getClosestEnemy(player.x, player.y);
     if (!current) return;
 
     window.soundFX.lightning();
@@ -810,14 +834,18 @@
     damageEnemy(current, cfg.damage * player.damageMult);
 
     for (let c = 0; c < cfg.chains; c++) {
-      window.particleSystem.addExplosion(current.x, current.y, '#ffe600', 6);
+      window.particleSystem.addExplosion(current.x, current.y, '#ffe600', 4);
       let next = null;
-      let minDist = 220;
-      for (const candidate of enemies) {
+      let minDistSq = 220 * 220;
+      for (let i = 0; i < enemies.length; i++) {
+        const candidate = enemies[i];
         if (!hitSet.has(candidate)) {
-          const d = Math.hypot(candidate.x - current.x, candidate.y - current.y);
-          if (d < minDist) {
-            minDist = d;
+          const dx = candidate.x - current.x;
+          const dy = candidate.y - current.y;
+          if (Math.abs(dx) > 220 || Math.abs(dy) > 220) continue;
+          const dSq = dx * dx + dy * dy;
+          if (dSq < minDistSq) {
+            minDistSq = dSq;
             next = candidate;
           }
         }
@@ -835,13 +863,18 @@
   function fireNova(cfg) {
     window.soundFX.nova();
     window.particleSystem.triggerScreenShake(7, 0.2);
-    window.particleSystem.addExplosion(player.x, player.y, '#9d00ff', 40);
+    window.particleSystem.addExplosion(player.x, player.y, '#9d00ff', 25);
 
-    for (const e of enemies) {
-      const dist = Math.hypot(e.x - player.x, e.y - player.y);
-      if (dist <= cfg.radius) {
+    const rSq = cfg.radius * cfg.radius;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!e) continue;
+      const dx = e.x - player.x;
+      const dy = e.y - player.y;
+      if (Math.abs(dx) > cfg.radius || Math.abs(dy) > cfg.radius) continue;
+      if (dx * dx + dy * dy <= rSq) {
         damageEnemy(e, cfg.damage * player.damageMult);
-        const angle = Math.atan2(e.y - player.y, e.x - player.x);
+        const angle = Math.atan2(dy, dx);
         e.x += Math.cos(angle) * cfg.knockback;
         e.y += Math.sin(angle) * cfg.knockback;
       }
@@ -873,39 +906,44 @@
   // Super Weapon Triggers
   function triggerOrbitalJudgement() {
     if (enemies.length === 0) return;
-    const sorted = [...enemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
-    const target = sorted[0];
+    const target = getClosestEnemy(player.x, player.y);
     if (!target) return;
 
     window.soundFX.orbitalBeam();
     window.particleSystem.triggerScreenShake(16, 0.4);
     window.particleSystem.addOrbitalBeam(target.x, target.y);
 
-    for (const e of enemies) {
-      if (Math.abs(e.x - target.x) < 55) {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e && Math.abs(e.x - target.x) < 55) {
         damageEnemy(e, 380 * player.damageMult);
       }
     }
 
-    for (let i = 0; i < Math.min(12, enemies.length); i++) {
-      damageEnemy(enemies[i], 120 * player.damageMult);
-      window.particleSystem.addExplosion(enemies[i].x, enemies[i].y, '#00f3ff', 8);
+    const zapCount = Math.min(8, enemies.length);
+    for (let i = 0; i < zapCount; i++) {
+      if (enemies[i]) {
+        damageEnemy(enemies[i], 120 * player.damageMult);
+      }
     }
   }
 
   function triggerVortexSingularity() {
     if (enemies.length === 0) return;
-    const sorted = [...enemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
-    const target = sorted[0] || player;
+    const target = getClosestEnemy(player.x, player.y) || player;
 
     window.soundFX.blackHole();
     window.particleSystem.triggerScreenShake(12, 0.35);
     window.particleSystem.addBlackHole(target.x, target.y);
 
-    for (const e of enemies) {
-      const d = Math.hypot(e.x - target.x, e.y - target.y);
-      if (d < 300) {
-        const a = Math.atan2(target.y - e.y, target.x - e.x);
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!e) continue;
+      const dx = e.x - target.x;
+      const dy = e.y - target.y;
+      if (Math.abs(dx) > 300 || Math.abs(dy) > 300) continue;
+      if (dx * dx + dy * dy < 300 * 300) {
+        const a = Math.atan2(-dy, -dx);
         e.x += Math.cos(a) * 75;
         e.y += Math.sin(a) * 75;
         damageEnemy(e, 180 * player.damageMult);
@@ -959,7 +997,7 @@
     const isBoss = e.type === 'boss';
 
     window.soundFX.explosion(isBoss);
-    window.particleSystem.addExplosion(e.x, e.y, e.color, isBoss ? 50 : 16, isBoss);
+    window.particleSystem.addExplosion(e.x, e.y, e.color, isBoss ? 40 : 8, isBoss);
 
     if (isBoss) {
       window.particleSystem.triggerScreenShake(15, 0.5);
@@ -967,11 +1005,27 @@
       drops.push({ x: e.x + 20, y: e.y, type: 'heal', val: 50 });
       drops.push({ x: e.x - 20, y: e.y, type: 'exp', val: 400 });
     } else {
-      drops.push({ x: e.x, y: e.y, type: 'exp', val: e.expVal });
+      // Consolidate EXP drops when pool exceeds 160 so zero EXP is lost and FPS stays 60
+      if (drops.length > 160) {
+        let merged = false;
+        for (let i = 0; i < drops.length; i++) {
+          if (drops[i].type === 'exp') {
+            drops[i].val += e.expVal;
+            drops[i].x = e.x;
+            drops[i].y = e.y;
+            merged = true;
+            break;
+          }
+        }
+        if (!merged) drops.push({ x: e.x, y: e.y, type: 'exp', val: e.expVal });
+      } else {
+        drops.push({ x: e.x, y: e.y, type: 'exp', val: e.expVal });
+      }
+
       const r = Math.random();
       if (r < 0.08) {
         drops.push({ x: e.x, y: e.y, type: 'core', val: 5 });
-      } else if (r < 0.015) {
+      } else if (r < 0.012) {
         drops.push({ x: e.x, y: e.y, type: 'nuke' });
       } else if (r < 0.03 && player.hp < player.maxHp * 0.7) {
         drops.push({ x: e.x, y: e.y, type: 'heal', val: 25 });
@@ -1435,7 +1489,7 @@
     // Bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
-      if (b.homing && b.target && enemies.includes(b.target)) {
+      if (b.homing && b.target && b.target.hp > 0) {
         const angle = Math.atan2(b.target.y - b.y, b.target.x - b.x);
         b.vx = Math.cos(angle) * b.speed;
         b.vy = Math.sin(angle) * b.speed;
@@ -1444,12 +1498,20 @@
       b.y += b.vy;
       b.life -= dt;
 
-      for (const e of enemies) {
-        if (!b.hitList.has(e) && Math.hypot(e.x - b.x, e.y - b.y) < e.radius + b.radius) {
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        const e = enemies[j];
+        if (!e || b.hitList.has(e)) continue;
+        const hitR = e.radius + b.radius;
+        const dx = e.x - b.x;
+        const dy = e.y - b.y;
+        if (Math.abs(dx) > hitR || Math.abs(dy) > hitR) continue;
+        if (dx * dx + dy * dy < hitR * hitR) {
           b.hitList.add(e);
           damageEnemy(e, b.damage);
           b.pierce--;
-          window.particleSystem.addExplosion(b.x, b.y, b.color, 4);
+          if (Math.random() < 0.35) {
+            window.particleSystem.addExplosion(b.x, b.y, b.color, 3);
+          }
           if (b.pierce <= 0) break;
         }
       }
@@ -1466,9 +1528,12 @@
       eb.y += eb.vy;
       eb.life -= dt;
 
-      if (Math.hypot(player.x - eb.x, player.y - eb.y) < player.radius + 6) {
+      const edx = player.x - eb.x;
+      const edy = player.y - eb.y;
+      const pHitR = player.radius + 6;
+      if (Math.abs(edx) < pHitR && Math.abs(edy) < pHitR && edx * edx + edy * edy < pHitR * pHitR) {
         hurtPlayer(18);
-        window.particleSystem.addExplosion(eb.x, eb.y, '#ff0055', 6);
+        window.particleSystem.addExplosion(eb.x, eb.y, '#ff0055', 5);
         enemyBullets.splice(i, 1);
         continue;
       }
@@ -1481,9 +1546,11 @@
     // Enemies collision & cleanup
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
+      const pdx = player.x - e.x;
+      const pdy = player.y - e.y;
 
       // Despawn non-boss if player ran too far away
-      if (e.type !== 'boss' && Math.hypot(player.x - e.x, player.y - e.y) > 2200) {
+      if (e.type !== 'boss' && (Math.abs(pdx) > 1900 || Math.abs(pdy) > 1900)) {
         enemies.splice(i, 1);
         continue;
       }
@@ -1636,25 +1703,33 @@
       ctx.fill();
     }
 
-    for (const e of enemies) {
-      drawEnemy(e, cam);
+    for (let i = 0; i < enemies.length; i++) {
+      drawEnemy(enemies[i], cam, viewW, viewH);
     }
 
-    for (const eb of enemyBullets) {
-      ctx.fillStyle = '#ff0055';
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = '#ff0055';
+    // Enemy Bullets (No shadowBlur for 60 FPS performance)
+    ctx.fillStyle = '#ff0055';
+    ctx.shadowBlur = 0;
+    for (let i = 0; i < enemyBullets.length; i++) {
+      const eb = enemyBullets[i];
+      const ebx = eb.x - cam.x;
+      const eby = eb.y - cam.y;
+      if (ebx < -20 || ebx > viewW + 20 || eby < -20 || eby > viewH + 20) continue;
       ctx.beginPath();
-      ctx.arc(eb.x - cam.x, eb.y - cam.y, 5, 0, Math.PI * 2);
+      ctx.arc(ebx, eby, 5, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    for (const b of bullets) {
+    // Player Bullets (Fast rendering without per-bullet shadowBlur)
+    ctx.shadowBlur = 0;
+    for (let i = 0; i < bullets.length; i++) {
+      const b = bullets[i];
+      const bx = b.x - cam.x;
+      const by = b.y - cam.y;
+      if (bx < -20 || bx > viewW + 20 || by < -20 || by > viewH + 20) continue;
       ctx.fillStyle = b.color;
-      ctx.shadowBlur = 12;
-      ctx.shadowColor = b.color;
       ctx.beginPath();
-      ctx.arc(b.x - cam.x, b.y - cam.y, b.radius, 0, Math.PI * 2);
+      ctx.arc(bx, by, b.radius, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -1787,8 +1862,6 @@
     const majorOffsetY = -cam.y % majorGrid;
     ctx.strokeStyle = 'rgba(0, 243, 255, 0.16)';
     ctx.lineWidth = 1.5;
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = 'rgba(0, 243, 255, 0.3)';
     ctx.beginPath();
     for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid) {
       ctx.moveTo(x, 0);
@@ -1800,13 +1873,11 @@
     }
     ctx.stroke();
 
-    // Intersection cyber nodes (+) at every 120px
+    // Intersection cyber nodes (+) at every 120px (zero shadowBlur for high FPS)
     const nodeGrid = 120;
     const nodeOffsetX = -cam.x % nodeGrid;
     const nodeOffsetY = -cam.y % nodeGrid;
-    ctx.fillStyle = 'rgba(0, 243, 255, 0.45)';
-    ctx.shadowBlur = 6;
-    ctx.shadowColor = '#00f3ff';
+    ctx.fillStyle = 'rgba(0, 243, 255, 0.42)';
     for (let x = nodeOffsetX; x < viewW + nodeGrid; x += nodeGrid) {
       for (let y = nodeOffsetY; y < viewH + nodeGrid; y += nodeGrid) {
         ctx.fillRect(x - 3, y - 0.5, 6, 1);
@@ -1817,8 +1888,6 @@
     // 5. Light Pulses sliding across major grid lines
     const pulseT = (now * 0.08) % 1200;
     ctx.fillStyle = '#00f3ff';
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = '#00f3ff';
     for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid * 2) {
       const py = (pulseT + x * 2) % viewH;
       ctx.fillRect(x - 1.5, py - 6, 3, 12);
@@ -1902,8 +1971,6 @@
           // Blinking sensor beacon
           const blink = Math.sin(now * 0.004 + hash) > 0;
           ctx.fillStyle = blink ? '#ff0055' : '#00f3ff';
-          ctx.shadowBlur = blink ? 10 : 4;
-          ctx.shadowColor = ctx.fillStyle;
           ctx.beginPath();
           ctx.arc(0, 0, 5, 0, Math.PI * 2);
           ctx.fill();
@@ -1914,10 +1981,8 @@
           ctx.translate(0, floatY);
 
           ctx.fillStyle = '#080c18';
-          ctx.strokeStyle = 'rgba(255, 0, 127, 0.6)';
+          ctx.strokeStyle = 'rgba(255, 0, 127, 0.7)';
           ctx.lineWidth = 1.5;
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = '#ff007f';
 
           ctx.beginPath();
           ctx.moveTo(0, -42);
@@ -1930,8 +1995,6 @@
 
           // Glowing internal neon core
           ctx.fillStyle = '#00f3ff';
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = '#00f3ff';
           ctx.beginPath();
           ctx.arc(0, 0, 4, 0, Math.PI * 2);
           ctx.fill();
@@ -1957,8 +2020,6 @@
 
           // Segmented outer armor brackets
           ctx.strokeStyle = '#00f3ff';
-          ctx.shadowBlur = 8;
-          ctx.shadowColor = '#00f3ff';
           ctx.lineWidth = 2.5;
           for (let b = 0; b < 4; b++) {
             ctx.beginPath();
@@ -1976,10 +2037,8 @@
 
         } else {
           // --- Type 3: 全息戰區浮標 (Holo Hazard Beacon) ---
-          ctx.strokeStyle = 'rgba(255, 230, 0, 0.7)';
+          ctx.strokeStyle = 'rgba(255, 230, 0, 0.75)';
           ctx.lineWidth = 1.5;
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = '#ffe600';
 
           // Outer caution diamond
           ctx.beginPath();
@@ -2138,13 +2197,13 @@
     ctx.restore();
   }
 
-  function drawEnemy(e, cam) {
+  function drawEnemy(e, cam, viewW, viewH) {
     const ex = e.x - cam.x;
     const ey = e.y - cam.y;
 
-    ctx.save();
-    ctx.shadowBlur = 12;
-    ctx.shadowColor = e.color;
+    // Frustum / Viewport culling: skip off-screen enemies completely
+    if (ex < -45 || ex > viewW + 45 || ey < -45 || ey > viewH + 45) return;
+
     ctx.fillStyle = e.hitFlash > 0 ? '#ffffff' : e.color;
 
     if (e.type === 'drone') {
@@ -2171,6 +2230,9 @@
       ctx.arc(ex, ey, e.radius, 0, Math.PI * 2);
       ctx.fill();
     } else if (e.type === 'boss') {
+      ctx.save();
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = e.color;
       const pulse = Math.sin(Date.now() * 0.006) * 4;
       ctx.beginPath();
       ctx.arc(ex, ey, e.radius + pulse, 0, Math.PI * 2);
@@ -2178,6 +2240,7 @@
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 3;
       ctx.stroke();
+      ctx.restore();
 
       const barW = 80;
       const barH = 7;
@@ -2186,8 +2249,6 @@
       ctx.fillStyle = '#ff0033';
       ctx.fillRect(ex - barW / 2, ey - e.radius - 20, barW * (e.hp / e.maxHp), barH);
     }
-
-    ctx.restore();
   }
 
   function drawOrbitalBlades(cam) {
@@ -2252,25 +2313,29 @@
   }
 
   function drawDrops(cam) {
+    const viewW = width / zoom;
+    const viewH = height / zoom;
     const now = Date.now();
-    for (const d of drops) {
+    ctx.shadowBlur = 0;
+
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i];
       const dx = d.x - cam.x;
       const dy = d.y - cam.y;
 
-      ctx.save();
+      // Off-screen viewport culling
+      if (dx < -35 || dx > viewW + 35 || dy < -35 || dy > viewH + 35) continue;
+
       if (d.type === 'exp') {
         ctx.fillStyle = d.val > 50 ? '#ffe600' : (d.val > 20 ? '#ff007f' : '#00f3ff');
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = ctx.fillStyle;
         ctx.fillRect(dx - 3, dy - 3, 6, 6);
       } else if (d.type === 'core') {
         ctx.fillStyle = '#00ffaa';
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = '#00ffaa';
         ctx.beginPath();
         ctx.arc(dx, dy, 6, 0, Math.PI * 2);
         ctx.fill();
       } else {
+        ctx.save();
         // Special Environmental Powerups with High-tech Hex Beacon Aura
         const floatY = dy + Math.sin(now / 220 + d.x * 0.01) * 4;
         const pulse = (Math.sin(now / 200) + 1) * 0.5;
@@ -2287,8 +2352,6 @@
         ctx.strokeStyle = mainColor;
         ctx.globalAlpha = 0.35 + pulse * 0.3;
         ctx.lineWidth = 1.5;
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = mainColor;
         ctx.beginPath();
         ctx.arc(dx, dy, 16 + pulse * 8, 0, Math.PI * 2);
         ctx.stroke();
@@ -2314,11 +2377,9 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillStyle = mainColor;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = mainColor;
         ctx.fillText(icon, 0, 1);
+        ctx.restore();
       }
-      ctx.restore();
     }
   }
 

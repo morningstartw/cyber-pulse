@@ -9,6 +9,16 @@ class SoundFX {
     this.masterGain = null;
     this.sfxGain = null;
     this.bgmGain = null;
+    this.lastSoundTimes = {};
+  }
+
+  canPlay(key, minInterval = 0.045) {
+    if (this.muted || !this.ctx) return false;
+    const now = this.ctx.currentTime;
+    const last = this.lastSoundTimes[key] || 0;
+    if (now - last < minInterval) return false;
+    this.lastSoundTimes[key] = now;
+    return true;
   }
 
   init() {
@@ -28,6 +38,14 @@ class SoundFX {
     this.bgmGain = this.ctx.createGain();
     this.bgmGain.gain.value = 0.35;
     this.bgmGain.connect(this.masterGain);
+
+    // Pre-allocate reusable white noise buffer for explosions (prevents GC / CPU spikes)
+    const bufferSize = this.ctx.sampleRate * 0.7;
+    this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = this.noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
   }
 
   ensureContext() {
@@ -47,7 +65,7 @@ class SoundFX {
 
   // Laser shot SFX
   shoot(freq = 660) {
-    if (this.muted || !this.ctx) return;
+    if (!this.canPlay('shoot', 0.04)) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -68,7 +86,7 @@ class SoundFX {
 
   // Energy blade swing SFX
   blade() {
-    if (this.muted || !this.ctx) return;
+    if (!this.canPlay('blade', 0.06)) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -90,7 +108,7 @@ class SoundFX {
 
   // Electric arc / lightning zap
   lightning() {
-    if (this.muted || !this.ctx) return;
+    if (!this.canPlay('lightning', 0.06)) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -113,7 +131,7 @@ class SoundFX {
 
   // Shockwave Nova
   nova() {
-    if (this.muted || !this.ctx) return;
+    if (!this.canPlay('nova', 0.08)) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -133,22 +151,15 @@ class SoundFX {
     osc.stop(now + 0.36);
   }
 
-  // Explosion with low-frequency rumble
+  // Explosion with low-frequency rumble (reuses pre-allocated noise buffer)
   explosion(isBoss = false) {
-    if (this.muted || !this.ctx) return;
+    if (!isBoss && !this.canPlay('explosion', 0.065)) return;
+    if (this.muted || !this.ctx || !this.noiseBuffer) return;
     const now = this.ctx.currentTime;
-    const duration = isBoss ? 0.7 : 0.35;
-
-    // Buffer noise
-    const bufferSize = this.ctx.sampleRate * duration;
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
+    const duration = isBoss ? 0.7 : 0.25;
 
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.noiseBuffer;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
@@ -156,19 +167,19 @@ class SoundFX {
     filter.frequency.exponentialRampToValueAtTime(30, now + duration);
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(isBoss ? 0.6 : 0.35, now);
+    gain.gain.setValueAtTime(isBoss ? 0.6 : 0.3, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(this.sfxGain);
 
-    noise.start(now);
+    noise.start(now, 0, duration);
   }
 
   // Crystal pickup chime
   pickup() {
-    if (this.muted || !this.ctx) return;
+    if (!this.canPlay('pickup', 0.035)) return;
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();

@@ -82,8 +82,13 @@ class ParticleSystem {
   }
 
   addExplosion(x, y, color = '#ff0077', count = 25, isBoss = false) {
-    const finalCount = isBoss ? count * 2.5 : count;
+    // Cap particle pool to maintain 60 FPS under heavy load
+    if (this.particles.length > 180 && !isBoss) {
+      count = Math.min(count, 4);
+    }
+    const finalCount = isBoss ? count * 2 : Math.min(count, 12);
     for (let i = 0; i < finalCount; i++) {
+      if (this.particles.length >= 220) break;
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * (isBoss ? 7 : 4.5) + 1;
       this.particles.push({
@@ -91,26 +96,33 @@ class ParticleSystem {
         y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        size: Math.random() * (isBoss ? 5 : 3.5) + 1.5,
+        size: Math.random() * (isBoss ? 4.5 : 3) + 1.5,
         color: color,
         alpha: 1,
-        decay: Math.random() * 0.02 + 0.02,
-        glow: true
+        decay: Math.random() * 0.03 + 0.025,
+        glow: false
       });
     }
 
-    this.shockwaves.push({
-      x,
-      y,
-      radius: 5,
-      maxRadius: isBoss ? 160 : 70,
-      color: color,
-      alpha: 1,
-      speed: isBoss ? 6 : 4
-    });
+    // Only spawn shockwave for significant explosions (not tiny bullet hits)
+    if ((count >= 10 || isBoss) && this.shockwaves.length < 15) {
+      this.shockwaves.push({
+        x,
+        y,
+        radius: 5,
+        maxRadius: isBoss ? 160 : 65,
+        color: color,
+        alpha: 1,
+        speed: isBoss ? 6 : 4.5
+      });
+    }
   }
 
   addDamageNumber(x, y, amount, isCrit = false) {
+    if (this.damageNumbers.length >= 28) {
+      if (!isCrit) return; // Prioritize crit numbers when screen is busy
+      this.damageNumbers.shift();
+    }
     this.damageNumbers.push({
       x: x + (Math.random() - 0.5) * 16,
       y: y - 10,
@@ -118,7 +130,7 @@ class ParticleSystem {
       isCrit,
       vy: -1.8,
       alpha: 1,
-      life: 0.6
+      life: 0.5
     });
   }
 
@@ -379,19 +391,14 @@ class ParticleSystem {
       ctx.stroke();
     }
 
-    // Particles
+    // Particles (Hardware-accelerated quad blitting without expensive per-particle shadowBlur)
+    ctx.shadowBlur = 0;
     for (const p of this.particles) {
       const px = p.x - camera.x;
       const py = p.y - camera.y;
       ctx.globalAlpha = Math.max(0, p.alpha);
       ctx.fillStyle = p.color;
-      if (p.glow) {
-        ctx.shadowBlur = 8;
-        ctx.shadowColor = p.color;
-      }
-      ctx.beginPath();
-      ctx.arc(px, py, p.size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(px - p.size, py - p.size, p.size * 2, p.size * 2);
     }
 
     // Damage numbers

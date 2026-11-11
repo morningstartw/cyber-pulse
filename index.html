@@ -8,8 +8,20 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>CYBER PULSE: OVERDRIVE</title>
   <link rel="icon" type="image/svg+xml" href="icon.svg">
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=2.2">
+  <link rel="stylesheet" href="style.css?v=3.0">
+  <script>
+    // Force unregister stale service worker to guarantee live updates
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const reg of registrations) reg.unregister();
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        for (const k of keys) caches.delete(k);
+      });
+    }
+  </script>
 </head>
 <body>
   <div id="game-container">
@@ -148,15 +160,8 @@
     </section>
   </div>
 
-  <script src="audio.js?v=2.2"></script>
-  <script src="particles.js?v=2.2"></script>
-  <script src="game.js?v=2.2"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
-      });
-    }
-  </script>
+  <script src="audio.js?v=3.0"></script>
+  <script src="particles.js?v=3.0"></script>
+  <script src="game.js?v=3.0"></script>
 </body>
 </html>

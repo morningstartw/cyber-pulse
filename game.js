@@ -97,12 +97,12 @@
 
   function updateZoom() {
     const minDim = Math.min(width, height);
-    if (minDim < 500) {
-      zoom = 0.62; // Phones: Zoom out by ~38% so player has broad field of view
-    } else if (minDim < 800) {
-      zoom = 0.76; // Tablets / small screens
+    if (minDim < 550) {
+      zoom = 0.52; // Mobile phones: pull back camera by ~48% for huge, comfortable field of view
+    } else if (minDim < 850) {
+      zoom = 0.70; // Tablets
     } else {
-      zoom = 0.90; // Desktop
+      zoom = 0.88; // Desktop
     }
   }
 
@@ -1042,9 +1042,11 @@
 
       card.innerHTML = `
         <div class="card-icon">${choice.def.icon}</div>
-        <div class="card-name">${choice.def.name}</div>
-        <div class="card-type">${choice.def.type}</div>
-        <div class="card-desc">${choice.def.desc}</div>
+        <div class="card-content">
+          <div class="card-name">${choice.def.name}</div>
+          <div class="card-type">${choice.def.type}</div>
+          <div class="card-desc">${choice.def.desc}</div>
+        </div>
         <div class="card-level">${lvlStr}</div>
       `;
 

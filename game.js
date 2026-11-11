@@ -454,20 +454,32 @@
     window.particleSystem.addExplosion(player.x, player.y, player.color, 12);
   }
 
-  // Spawning Enemies
+  // Enemy Spawns & Swarm Horde System
   let spawnTimer = 0;
+  let nextSwarmTime = 30; // First swarm wave at 30 seconds
+
   function updateEnemySpawns(dt) {
     spawnTimer += dt;
-    const interval = Math.max(0.18, 1.2 - (gameTime / 600) * 0.95);
 
-    if (spawnTimer >= interval) {
+    // Much denser spawn rate: generates true monster hordes
+    const interval = Math.max(0.07, 0.42 - (gameTime / 360) * 0.32);
+
+    if (spawnTimer >= interval && enemies.length < 450) {
       spawnTimer = 0;
-      const count = 1 + Math.floor(gameTime / 80);
+      // Scales from 3 to 18 enemies per spawn burst
+      const count = 2 + Math.floor(gameTime / 25) * 2;
       for (let i = 0; i < count; i++) {
         spawnRandomEnemy();
       }
     }
 
+    // Periodic Massive Swarm Invasions (Surrounding Rings of Monsters)
+    if (gameTime >= nextSwarmTime) {
+      nextSwarmTime += 40; // Wave every 40s
+      spawnSwarmRing(35 + Math.min(45, Math.floor(gameTime / 10)));
+    }
+
+    // Boss spawns
     if (gameTime >= 180 && !bossSpawned3m) {
       bossSpawned3m = true;
       spawnBoss('OVERLORD');
@@ -475,6 +487,36 @@
     if (gameTime >= 420 && !bossSpawned7m) {
       bossSpawned7m = true;
       spawnBoss('APEX');
+    }
+  }
+
+  // Spawns a dense ring of fast drones closing in from all 360 degrees
+  function spawnSwarmRing(count) {
+    window.soundFX.shoot(300);
+    window.particleSystem.triggerScreenShake(6, 0.2);
+
+    const viewW = width / zoom;
+    const viewH = height / zoom;
+    const radius = Math.hypot(viewW, viewH) * 0.55 + 90;
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const x = player.x + Math.cos(angle) * radius;
+      const y = player.y + Math.sin(angle) * radius;
+
+      enemies.push({
+        x,
+        y,
+        type: 'drone',
+        hp: 16 + gameTime * 0.3,
+        maxHp: 16 + gameTime * 0.3,
+        speed: 2.3,
+        radius: 11,
+        color: '#ff0055', // Red glowing swarm
+        expVal: 8,
+        shootTimer: 0,
+        hitFlash: 0
+      });
     }
   }
 
@@ -491,13 +533,13 @@
 
     if (gameTime > 120 && r < 0.25) {
       type = 'sentinel';
-    } else if (gameTime > 60 && r < 0.5) {
+    } else if (gameTime > 50 && r < 0.55) {
       type = 'crawler';
-    } else if (gameTime > 240 && r < 0.15) {
+    } else if (gameTime > 200 && r < 0.2) {
       type = 'stalker';
     }
 
-    let hp = 24 + gameTime * 0.45;
+    let hp = 20 + gameTime * 0.4;
     let speed = 2.1;
     let radius = 12;
     let color = '#00f3ff';
@@ -505,24 +547,24 @@
     let shootTimer = 0;
 
     if (type === 'crawler') {
-      hp = 48 + gameTime * 0.8;
+      hp = 42 + gameTime * 0.75;
       speed = 1.6;
-      radius = 16;
+      radius = 15;
       color = '#ff007f';
-      expVal = 20;
+      expVal = 18;
     } else if (type === 'sentinel') {
-      hp = 120 + gameTime * 1.5;
+      hp = 110 + gameTime * 1.4;
       speed = 1.0;
-      radius = 22;
+      radius = 21;
       color = '#ffaa00';
-      expVal = 45;
+      expVal = 40;
       shootTimer = Math.random() * 2;
     } else if (type === 'stalker') {
-      hp = 75 + gameTime * 1.2;
+      hp = 65 + gameTime * 1.1;
       speed = 3.2;
-      radius = 14;
+      radius = 13;
       color = '#9d00ff';
-      expVal = 60;
+      expVal = 50;
     }
 
     enemies.push({
@@ -1074,6 +1116,7 @@
     totalDamageDealt = 0;
     bossSpawned3m = false;
     bossSpawned7m = false;
+    nextSwarmTime = 30;
 
     document.getElementById('main-menu').classList.remove('active');
     document.getElementById('settlement-modal').classList.remove('active');
@@ -1346,9 +1389,16 @@
       }
     }
 
-    // Enemies collision
+    // Enemies collision & cleanup
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
+
+      // Despawn non-boss if player ran too far away
+      if (e.type !== 'boss' && Math.hypot(player.x - e.x, player.y - e.y) > 2200) {
+        enemies.splice(i, 1);
+        continue;
+      }
+
       const angle = Math.atan2(player.y - e.y, player.x - e.x);
       e.x += Math.cos(angle) * e.speed;
       e.y += Math.sin(angle) * e.speed;

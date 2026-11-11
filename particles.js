@@ -7,6 +7,7 @@ class ParticleSystem {
     this.orbitalBeams = [];
     this.blackHoles = [];
     this.dashGhostTrails = [];
+    this.floatingTexts = [];
     this.screenShake = { duration: 0, intensity: 0, x: 0, y: 0 };
     this.gridMotes = [];
     this.initGridMotes(60);
@@ -121,6 +122,74 @@ class ParticleSystem {
     });
   }
 
+  addFloatingText(x, y, text, color = '#00f3ff') {
+    this.floatingTexts.push({
+      x,
+      y: y - 20,
+      text,
+      color,
+      vy: -1.6,
+      alpha: 1,
+      life: 1.1
+    });
+  }
+
+  addHealAura(x, y) {
+    for (let i = 0; i < 16; i++) {
+      const angle = (Math.PI * 2 / 16) * i;
+      const speed = Math.random() * 2.5 + 1.5;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 1.2,
+        size: Math.random() * 3 + 2,
+        color: '#00ff66',
+        alpha: 1,
+        decay: 0.035,
+        glow: true
+      });
+    }
+    this.shockwaves.push({
+      x,
+      y,
+      radius: 5,
+      maxRadius: 85,
+      speed: 4,
+      color: '#00ff88',
+      width: 3,
+      alpha: 1
+    });
+  }
+
+  addMagnetWave(x, y) {
+    for (let i = 0; i < 28; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * 80 + 30;
+      this.particles.push({
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist,
+        vx: -Math.cos(angle) * 3.5,
+        vy: -Math.sin(angle) * 3.5,
+        size: Math.random() * 3 + 1.5,
+        color: '#00f3ff',
+        alpha: 1,
+        decay: 0.04,
+        glow: true
+      });
+    }
+    this.shockwaves.push({
+      x,
+      y,
+      radius: 10,
+      maxRadius: 260,
+      speed: 12,
+      color: '#00f3ff',
+      width: 4,
+      alpha: 1
+    });
+  }
+
   update(dt) {
     // Screen shake update
     if (this.screenShake.duration > 0) {
@@ -176,6 +245,17 @@ class ParticleSystem {
       g.alpha = Math.max(0, g.life / 0.35);
       if (g.life <= 0) {
         this.dashGhostTrails.splice(i, 1);
+      }
+    }
+
+    // Floating UI Texts
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.y += ft.vy;
+      ft.life -= dt;
+      ft.alpha = Math.max(0, ft.life / 1.1);
+      if (ft.life <= 0) {
+        this.floatingTexts.splice(i, 1);
       }
     }
 
@@ -324,6 +404,21 @@ class ParticleSystem {
       ctx.fillStyle = d.isCrit ? '#ffea00' : '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(d.isCrit ? `CRIT ${d.amount}` : `${d.amount}`, dx, dy);
+    }
+
+    // Floating Special Texts
+    for (const ft of this.floatingTexts) {
+      const fx = ft.x - camera.x;
+      const fy = ft.y - camera.y;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, ft.alpha);
+      ctx.font = '900 16px "Orbitron", sans-serif';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = ft.color;
+      ctx.fillStyle = ft.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(ft.text, fx, fy);
+      ctx.restore();
     }
 
     ctx.restore();

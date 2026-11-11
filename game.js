@@ -401,6 +401,10 @@
       dashDuration: 0,
       dashVx: 0,
       dashVy: 0,
+      // Powerup States
+      overdriveTimer: 0,
+      globalMagnetActive: false,
+      globalMagnetTimer: 0,
       weapons: Object.assign({
         blaster: 0, blades: 0, lightning: 0, nova: 0, drone: 0, shield: 0,
         orbital_judgement: 0, vortex_singularity: 0, aegis_fortress: 0
@@ -452,6 +456,46 @@
     window.particleSystem.triggerScreenShake(7, 0.15);
     window.particleSystem.addDashTrail(player.x, player.y, player.rotation, player.color);
     window.particleSystem.addExplosion(player.x, player.y, player.color, 12);
+  }
+
+  // Map Random Powerup Item Spawner
+  let mapItemSpawnTimer = 0;
+  function updateMapItemSpawns(dt) {
+    mapItemSpawnTimer += dt;
+    const activeSpecialItems = drops.filter(d => ['magnet', 'heal', 'overdrive', 'nuke', 'chest'].includes(d.type)).length;
+    // Spawn every 18 seconds if fewer than 6 special items on the map
+    if (mapItemSpawnTimer >= 18 && activeSpecialItems < 6) {
+      mapItemSpawnTimer = 0;
+      spawnRandomMapPowerup();
+    }
+  }
+
+  function spawnRandomMapPowerup(nearDist = null) {
+    if (!player) return;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = nearDist !== null ? nearDist : (Math.random() * 500 + 420);
+    const x = player.x + Math.cos(angle) * dist;
+    const y = player.y + Math.sin(angle) * dist;
+
+    const types = ['heal', 'magnet', 'overdrive', 'chest', 'nuke'];
+    const weights = [0.30, 0.25, 0.22, 0.13, 0.10];
+    let r = Math.random();
+    let selectedType = 'heal';
+    for (let i = 0; i < types.length; i++) {
+      if (r < weights[i]) {
+        selectedType = types[i];
+        break;
+      }
+      r -= weights[i];
+    }
+
+    drops.push({
+      x,
+      y,
+      type: selectedType,
+      isMapItem: true,
+      spawnTime: gameTime
+    });
   }
 
   // Enemy Spawns & Swarm Horde System
@@ -611,11 +655,13 @@
 
   // Weapons & Super Weapons Update
   function updateWeapons(dt) {
+    const effCdr = player.overdriveTimer > 0 ? player.cdr * 0.52 : player.cdr;
+
     // 1. Pulse Blaster
     if (player.weapons.blaster > 0) {
       const cfg = WEAPON_REGISTRY.blaster.levels[player.weapons.blaster - 1];
       player.timers.blaster += dt;
-      const rate = cfg.fireRate * player.cdr;
+      const rate = cfg.fireRate * effCdr;
       if (player.timers.blaster >= rate) {
         player.timers.blaster = 0;
         fireBlaster(cfg);
@@ -625,7 +671,7 @@
     // 2. Orbital Blades
     if (player.weapons.blades > 0) {
       const cfg = WEAPON_REGISTRY.blades.levels[player.weapons.blades - 1];
-      player.timers.bladesAngle += cfg.speed * dt;
+      player.timers.bladesAngle += cfg.speed * dt * (player.overdriveTimer > 0 ? 1.4 : 1.0);
       checkBladeCollisions(cfg);
     }
 
@@ -633,7 +679,7 @@
     if (player.weapons.lightning > 0) {
       const cfg = WEAPON_REGISTRY.lightning.levels[player.weapons.lightning - 1];
       player.timers.lightning += dt;
-      const cd = cfg.cooldown * player.cdr;
+      const cd = cfg.cooldown * effCdr;
       if (player.timers.lightning >= cd) {
         player.timers.lightning = 0;
         fireLightning(cfg);
@@ -644,7 +690,7 @@
     if (player.weapons.nova > 0) {
       const cfg = WEAPON_REGISTRY.nova.levels[player.weapons.nova - 1];
       player.timers.nova += dt;
-      const cd = cfg.cooldown * player.cdr;
+      const cd = cfg.cooldown * effCdr;
       if (player.timers.nova >= cd) {
         player.timers.nova = 0;
         fireNova(cfg);
@@ -655,7 +701,7 @@
     if (player.weapons.drone > 0) {
       const cfg = WEAPON_REGISTRY.drone.levels[player.weapons.drone - 1];
       player.timers.drone += dt;
-      const rate = cfg.fireRate * player.cdr;
+      const rate = cfg.fireRate * effCdr;
       if (player.timers.drone >= rate) {
         player.timers.drone = 0;
         fireDroneMissiles(cfg);
@@ -681,7 +727,7 @@
     // A. Orbital Judgement
     if (player.weapons.orbital_judgement > 0) {
       player.timers.orbital_judgement += dt;
-      const cd = 3.2 * player.cdr;
+      const cd = 3.2 * effCdr;
       if (player.timers.orbital_judgement >= cd) {
         player.timers.orbital_judgement = 0;
         triggerOrbitalJudgement();
@@ -691,7 +737,7 @@
     // B. Vortex Singularity
     if (player.weapons.vortex_singularity > 0) {
       player.timers.vortex_singularity += dt;
-      const cd = 3.6 * player.cdr;
+      const cd = 3.6 * effCdr;
       if (player.timers.vortex_singularity >= cd) {
         player.timers.vortex_singularity = 0;
         triggerVortexSingularity();
@@ -1119,6 +1165,11 @@
     bossSpawned3m = false;
     bossSpawned7m = false;
     nextSwarmTime = 30;
+    mapItemSpawnTimer = 0;
+
+    // Spawn 2 initial supply drops nearby to reward early navigation
+    spawnRandomMapPowerup(300);
+    spawnRandomMapPowerup(480);
 
     document.getElementById('main-menu').classList.remove('active');
     document.getElementById('settlement-modal').classList.remove('active');
@@ -1294,56 +1345,83 @@
         player.isDashing = false;
       }
     } else {
-      // Normal Player Movement
-      let mx = 0;
-      let my = 0;
-
-      if (keys['w'] || keys['arrowup']) my -= 1;
-      if (keys['s'] || keys['arrowdown']) my += 1;
-      if (keys['a'] || keys['arrowleft']) mx -= 1;
-      if (keys['d'] || keys['arrowright']) mx += 1;
-
-      if (joystick.active) {
-        mx = joystick.dx;
-        my = joystick.dy;
+    // Powerup Timers & FX
+    if (player.overdriveTimer > 0) {
+      player.overdriveTimer -= dt;
+      if (Math.random() < 0.45) {
+        window.particleSystem.particles.push({
+          x: player.x + (Math.random() - 0.5) * 22,
+          y: player.y + (Math.random() - 0.5) * 22,
+          vx: (Math.random() - 0.5) * 3,
+          vy: (Math.random() - 0.5) * 3,
+          size: Math.random() * 2.5 + 1,
+          color: '#ffe600',
+          alpha: 1,
+          decay: 0.05,
+          glow: true
+        });
       }
+    }
 
-      const len = Math.hypot(mx, my);
-      if (len > 0) {
-        player.vx = (mx / len) * player.speed;
-        player.vy = (my / len) * player.speed;
-        player.rotation = Math.atan2(player.vy, player.vx);
-      } else {
-        player.vx *= 0.8;
-        player.vy *= 0.8;
+    if (player.globalMagnetActive) {
+      player.globalMagnetTimer -= dt;
+      if (player.globalMagnetTimer <= 0) {
+        player.globalMagnetActive = false;
       }
-
-      player.x += player.vx;
-      player.y += player.vy;
     }
 
-    if (player.invulnTime > 0) {
-      player.invulnTime -= dt;
+    // Normal Player Movement
+    let mx = 0;
+    let my = 0;
+
+    if (keys['w'] || keys['arrowup']) my -= 1;
+    if (keys['s'] || keys['arrowdown']) my += 1;
+    if (keys['a'] || keys['arrowleft']) mx -= 1;
+    if (keys['d'] || keys['arrowright']) mx += 1;
+
+    if (joystick.active) {
+      mx = joystick.dx;
+      my = joystick.dy;
     }
 
-    // Player Trail
-    if (Math.hypot(player.vx, player.vy) > 0.5) {
-      player.trail.push({ x: player.x, y: player.y, alpha: 0.6 });
-    }
-    for (let i = player.trail.length - 1; i >= 0; i--) {
-      player.trail[i].alpha -= dt * 3;
-      if (player.trail[i].alpha <= 0) player.trail.splice(i, 1);
+    const len = Math.hypot(mx, my);
+    const effSpeed = player.overdriveTimer > 0 ? player.speed * 1.3 : player.speed;
+    if (len > 0) {
+      player.vx = (mx / len) * effSpeed;
+      player.vy = (my / len) * effSpeed;
+      player.rotation = Math.atan2(player.vy, player.vx);
+    } else {
+      player.vx *= 0.8;
+      player.vy *= 0.8;
     }
 
-    // Camera follow smoothly with Zoom field of view
-    const viewW = width / zoom;
-    const viewH = height / zoom;
-    camera.x += (player.x - viewW / 2 - camera.x) * 0.1;
-    camera.y += (player.y - viewH / 2 - camera.y) * 0.1;
+    player.x += player.vx;
+    player.y += player.vy;
+  }
 
-    // Updates
-    updateEnemySpawns(dt);
-    updateWeapons(dt);
+  if (player.invulnTime > 0) {
+    player.invulnTime -= dt;
+  }
+
+  // Player Trail
+  if (Math.hypot(player.vx, player.vy) > 0.5) {
+    player.trail.push({ x: player.x, y: player.y, alpha: 0.6 });
+  }
+  for (let i = player.trail.length - 1; i >= 0; i--) {
+    player.trail[i].alpha -= dt * 3;
+    if (player.trail[i].alpha <= 0) player.trail.splice(i, 1);
+  }
+
+  // Camera follow smoothly with Zoom field of view
+  const viewW = width / zoom;
+  const viewH = height / zoom;
+  camera.x += (player.x - viewW / 2 - camera.x) * 0.1;
+  camera.y += (player.y - viewH / 2 - camera.y) * 0.1;
+
+  // Updates
+  updateEnemySpawns(dt);
+  updateMapItemSpawns(dt);
+  updateWeapons(dt);
 
     // Bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -1453,23 +1531,50 @@
       const d = drops[i];
       const dist = Math.hypot(player.x - d.x, player.y - d.y);
 
-      if (dist < player.magnetRadius) {
+      // Global Magnet Active OR Within Player Magnet Radius
+      const isGlobalMagnet = player.globalMagnetActive;
+      if (isGlobalMagnet || dist < player.magnetRadius) {
         const angle = Math.atan2(player.y - d.y, player.x - d.x);
-        d.x += Math.cos(angle) * 8.5;
-        d.y += Math.sin(angle) * 8.5;
+        const pullSpeed = isGlobalMagnet ? 24 : 9.5;
+        d.x += Math.cos(angle) * pullSpeed;
+        d.y += Math.sin(angle) * pullSpeed;
       }
 
-      if (dist < player.radius + 12) {
-        window.soundFX.pickup();
+      if (dist < player.radius + 16) {
         if (d.type === 'exp') {
+          window.soundFX.pickup();
           player.exp += d.val;
           checkLevelUp();
         } else if (d.type === 'core') {
+          window.soundFX.pickup();
           sessionCores += d.val;
         } else if (d.type === 'heal') {
-          player.hp = Math.min(player.maxHp, player.hp + d.val);
+          const healAmt = d.val || Math.max(35, Math.round(player.maxHp * 0.35));
+          player.hp = Math.min(player.maxHp, player.hp + healAmt);
+          window.soundFX.heal();
+          window.particleSystem.addHealAura(player.x, player.y);
+          window.particleSystem.addFloatingText(player.x, player.y, `💚 裝甲修復 +${healAmt}!`, '#00ff66');
+        } else if (d.type === 'magnet') {
+          player.globalMagnetActive = true;
+          player.globalMagnetTimer = 4.0;
+          window.soundFX.magnet();
+          window.particleSystem.addMagnetWave(player.x, player.y);
+          window.particleSystem.addFloatingText(player.x, player.y, '🧲 超導磁石：全域吸收!', '#00f3ff');
+        } else if (d.type === 'overdrive') {
+          player.overdriveTimer = 7.0;
+          window.soundFX.hypercharge();
+          window.particleSystem.triggerScreenShake(7, 0.25);
+          window.particleSystem.addFloatingText(player.x, player.y, '⚡ 超載狂暴 7秒!', '#ffe600');
         } else if (d.type === 'nuke') {
           triggerNuke();
+          window.particleSystem.addFloatingText(player.x, player.y, '💣 EMP 核爆全域殲滅!', '#ff0055');
+        } else if (d.type === 'chest') {
+          sessionCores += 15;
+          window.soundFX.fusion();
+          for (let k = 0; k < 8; k++) {
+            drops.push({ x: player.x + (Math.random() - 0.5) * 60, y: player.y + (Math.random() - 0.5) * 60, type: 'exp', val: 25 });
+          }
+          window.particleSystem.addFloatingText(player.x, player.y, '📦 賽博補給箱 +15核心!', '#00ffcc');
         }
         drops.splice(i, 1);
       }
@@ -1510,7 +1615,8 @@
     const shake = window.particleSystem.screenShake;
     const cam = { x: camera.x + shake.x, y: camera.y + shake.y };
 
-    drawCyberGrid(cam, viewW, viewH);
+    drawCyberBackground(cam, viewW, viewH);
+    drawCyberStructures(cam, viewW, viewH);
     window.particleSystem.drawGridMotes(ctx, cam);
     drawDrops(cam);
 
@@ -1560,32 +1666,408 @@
     }
 
     window.particleSystem.draw(ctx, cam);
+    drawOffScreenIndicators(cam, viewW, viewH);
 
     ctx.restore();
   }
 
-  function drawCyberGrid(cam, viewW, viewH) {
+  // Pre-generated Parallax Background Stars & Nebulae
+  const bgStarsFar = [];
+  const bgStarsMid = [];
+  for (let i = 0; i < 90; i++) {
+    bgStarsFar.push({
+      x: (Math.random() * 3000) - 1500,
+      y: (Math.random() * 3000) - 1500,
+      size: Math.random() * 1.2 + 0.6,
+      baseAlpha: Math.random() * 0.4 + 0.2,
+      freq: Math.random() * 2 + 1
+    });
+  }
+  for (let i = 0; i < 60; i++) {
+    bgStarsMid.push({
+      x: (Math.random() * 3000) - 1500,
+      y: (Math.random() * 3000) - 1500,
+      size: Math.random() * 1.8 + 1.0,
+      baseAlpha: Math.random() * 0.5 + 0.3,
+      color: Math.random() > 0.6 ? '#00f3ff' : (Math.random() > 0.5 ? '#ff007f' : '#ffffff'),
+      freq: Math.random() * 3 + 1
+    });
+  }
+
+  const nebulae = [
+    { x: -600, y: -500, r: 550, color: 'rgba(0, 243, 255, 0.05)' },
+    { x: 1200, y: 1000, r: 650, color: 'rgba(255, 0, 127, 0.045)' },
+    { x: -1000, y: 1400, r: 500, color: 'rgba(157, 0, 255, 0.045)' },
+    { x: 1600, y: -1200, r: 600, color: 'rgba(0, 150, 255, 0.04)' }
+  ];
+
+  function drawCyberBackground(cam, viewW, viewH) {
+    const now = Date.now();
+
+    // 1. Radiant Deep Space Nebulae (Parallax 0.18x)
+    ctx.save();
+    for (const neb of nebulae) {
+      const nx = (neb.x - cam.x * 0.18);
+      const ny = (neb.y - cam.y * 0.18);
+      if (nx + neb.r < 0 || nx - neb.r > viewW || ny + neb.r < 0 || ny - neb.r > viewH) continue;
+
+      const grad = ctx.createRadialGradient(nx, ny, 10, nx, ny, neb.r);
+      grad.addColorStop(0, neb.color);
+      grad.addColorStop(1, 'rgba(5, 7, 14, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(nx, ny, neb.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 2. Parallax Stars (Layer 1 - Distant 0.12x)
+    ctx.save();
+    for (const s of bgStarsFar) {
+      const range = 2400;
+      const sx = ((s.x - cam.x * 0.12) % range + range) % range - (range - viewW) / 2;
+      const sy = ((s.y - cam.y * 0.12) % range + range) % range - (range - viewH) / 2;
+      if (sx < -10 || sx > viewW + 10 || sy < -10 || sy > viewH + 10) continue;
+
+      const twinkle = Math.sin(now * 0.002 * s.freq) * 0.25;
+      ctx.fillStyle = `rgba(220, 240, 255, ${Math.max(0.1, s.baseAlpha + twinkle)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Parallax Stars (Layer 2 - Mid 0.28x)
+    for (const s of bgStarsMid) {
+      const range = 2400;
+      const sx = ((s.x - cam.x * 0.28) % range + range) % range - (range - viewW) / 2;
+      const sy = ((s.y - cam.y * 0.28) % range + range) % range - (range - viewH) / 2;
+      if (sx < -10 || sx > viewW + 10 || sy < -10 || sy > viewH + 10) continue;
+
+      const twinkle = Math.sin(now * 0.003 * s.freq) * 0.3;
+      ctx.fillStyle = s.color;
+      ctx.globalAlpha = Math.max(0.15, s.baseAlpha + twinkle);
+      ctx.beginPath();
+      ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 4. Cyber Matrix Grid
+    ctx.save();
     const gridSize = 60;
     const offsetX = -cam.x % gridSize;
     const offsetY = -cam.y % gridSize;
 
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0, 243, 255, 0.07)';
+    // Minor grid lines
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.055)';
     ctx.lineWidth = 1;
-
+    ctx.beginPath();
     for (let x = offsetX; x < viewW + gridSize; x += gridSize) {
-      ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, viewH);
-      ctx.stroke();
     }
     for (let y = offsetY; y < viewH + gridSize; y += gridSize) {
-      ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(viewW, y);
-      ctx.stroke();
+    }
+    ctx.stroke();
+
+    // Major grid lines (every 240px)
+    const majorGrid = 240;
+    const majorOffsetX = -cam.x % majorGrid;
+    const majorOffsetY = -cam.y % majorGrid;
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.16)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(0, 243, 255, 0.3)';
+    ctx.beginPath();
+    for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid) {
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, viewH);
+    }
+    for (let y = majorOffsetY; y < viewH + majorGrid; y += majorGrid) {
+      ctx.moveTo(0, y);
+      ctx.lineTo(viewW, y);
+    }
+    ctx.stroke();
+
+    // Intersection cyber nodes (+) at every 120px
+    const nodeGrid = 120;
+    const nodeOffsetX = -cam.x % nodeGrid;
+    const nodeOffsetY = -cam.y % nodeGrid;
+    ctx.fillStyle = 'rgba(0, 243, 255, 0.45)';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = '#00f3ff';
+    for (let x = nodeOffsetX; x < viewW + nodeGrid; x += nodeGrid) {
+      for (let y = nodeOffsetY; y < viewH + nodeGrid; y += nodeGrid) {
+        ctx.fillRect(x - 3, y - 0.5, 6, 1);
+        ctx.fillRect(x - 0.5, y - 3, 1, 6);
+      }
+    }
+
+    // 5. Light Pulses sliding across major grid lines
+    const pulseT = (now * 0.08) % 1200;
+    ctx.fillStyle = '#00f3ff';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#00f3ff';
+    for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid * 2) {
+      const py = (pulseT + x * 2) % viewH;
+      ctx.fillRect(x - 1.5, py - 6, 3, 12);
+    }
+    for (let y = majorOffsetY; y < viewH + majorGrid; y += majorGrid * 2) {
+      const px = (pulseT + y * 2) % viewW;
+      ctx.fillRect(px - 6, y - 1.5, 12, 3);
+    }
+
+    ctx.restore();
+  }
+
+  // Deterministic Pseudo-Random Generator based on Chunk Coords
+  function chunkHash(cx, cy) {
+    let h = (cx * 374761393 + cy * 668265263) ^ 0x5bf03635;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return (h ^ (h >> 16)) >>> 0;
+  }
+
+  function drawCyberStructures(cam, viewW, viewH) {
+    const chunkSize = 720;
+    const minChunkX = Math.floor(cam.x / chunkSize) - 1;
+    const maxChunkX = Math.floor((cam.x + viewW) / chunkSize) + 1;
+    const minChunkY = Math.floor(cam.y / chunkSize) - 1;
+    const maxChunkY = Math.floor((cam.y + viewH) / chunkSize) + 1;
+    const now = Date.now();
+
+    ctx.save();
+    for (let cx = minChunkX; cx <= maxChunkX; cx++) {
+      for (let cy = minChunkY; cy <= maxChunkY; cy++) {
+        const hash = chunkHash(cx, cy);
+        if ((hash % 100) > 38) continue; // 38% probability of having a structure in this chunk
+
+        const localX = (hash % (chunkSize - 200)) + 100;
+        const localY = ((hash >> 8) % (chunkSize - 200)) + 100;
+        const worldX = cx * chunkSize + localX;
+        const worldY = cy * chunkSize + localY;
+
+        const screenX = worldX - cam.x;
+        const screenY = worldY - cam.y;
+
+        if (screenX < -150 || screenX > viewW + 150 || screenY < -150 || screenY > viewH + 150) continue;
+
+        const variant = (hash >> 16) % 4;
+        ctx.save();
+        ctx.translate(screenX, screenY);
+
+        if (variant === 0) {
+          // --- Type 0: 太陽能通訊衛星 (Solar Relay Satellite) ---
+          const rot = (hash % 360) * Math.PI / 180 + Math.sin(now * 0.0005 + hash) * 0.15;
+          ctx.rotate(rot);
+
+          // Solar panel wings (left and right)
+          ctx.fillStyle = 'rgba(0, 150, 255, 0.35)';
+          ctx.strokeStyle = '#00f3ff';
+          ctx.lineWidth = 1;
+          // Left wing
+          ctx.fillRect(-64, -14, 40, 28);
+          ctx.strokeRect(-64, -14, 40, 28);
+          ctx.strokeStyle = 'rgba(0, 243, 255, 0.4)';
+          ctx.beginPath();
+          ctx.moveTo(-44, -14); ctx.lineTo(-44, 14);
+          ctx.moveTo(-64, 0); ctx.lineTo(-24, 0);
+          ctx.stroke();
+
+          // Right wing
+          ctx.fillRect(24, -14, 40, 28);
+          ctx.strokeRect(24, -14, 40, 28);
+          ctx.beginPath();
+          ctx.moveTo(44, -14); ctx.lineTo(44, 14);
+          ctx.moveTo(24, 0); ctx.lineTo(64, 0);
+          ctx.stroke();
+
+          // Central module body
+          ctx.fillStyle = '#0f172a';
+          ctx.strokeStyle = '#00f3ff';
+          ctx.lineWidth = 1.5;
+          ctx.fillRect(-18, -18, 36, 36);
+          ctx.strokeRect(-18, -18, 36, 36);
+
+          // Blinking sensor beacon
+          const blink = Math.sin(now * 0.004 + hash) > 0;
+          ctx.fillStyle = blink ? '#ff0055' : '#00f3ff';
+          ctx.shadowBlur = blink ? 10 : 4;
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.beginPath();
+          ctx.arc(0, 0, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+        } else if (variant === 1) {
+          // --- Type 1: 賽博數據方尖碑 (Data Monolith) ---
+          const floatY = Math.sin(now * 0.001 + hash) * 8;
+          ctx.translate(0, floatY);
+
+          ctx.fillStyle = '#080c18';
+          ctx.strokeStyle = 'rgba(255, 0, 127, 0.6)';
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#ff007f';
+
+          ctx.beginPath();
+          ctx.moveTo(0, -42);
+          ctx.lineTo(22, 0);
+          ctx.lineTo(0, 42);
+          ctx.lineTo(-22, 0);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          // Glowing internal neon core
+          ctx.fillStyle = '#00f3ff';
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#00f3ff';
+          ctx.beginPath();
+          ctx.arc(0, 0, 4, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Floating holographic data rings
+          const ringPulse = (now * 0.0015 + hash) % (Math.PI * 2);
+          ctx.strokeStyle = 'rgba(0, 243, 255, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 36, 14, ringPulse, 0, Math.PI * 2);
+          ctx.stroke();
+
+        } else if (variant === 2) {
+          // --- Type 2: 廢棄環形空間站 / 反應爐遺構 (Derelict Reactor Ring) ---
+          const ringAngle = now * 0.0003 + hash;
+          ctx.rotate(ringAngle);
+
+          ctx.strokeStyle = 'rgba(100, 140, 180, 0.4)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, 48, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Segmented outer armor brackets
+          ctx.strokeStyle = '#00f3ff';
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = '#00f3ff';
+          ctx.lineWidth = 2.5;
+          for (let b = 0; b < 4; b++) {
+            ctx.beginPath();
+            ctx.arc(0, 0, 52, b * Math.PI / 2 + 0.1, b * Math.PI / 2 + 0.9);
+            ctx.stroke();
+          }
+
+          // Faint energy discharge in center
+          if (Math.sin(now * 0.005 + hash) > 0.4) {
+            ctx.fillStyle = 'rgba(0, 243, 255, 0.2)';
+            ctx.beginPath();
+            ctx.arc(0, 0, 16, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+        } else {
+          // --- Type 3: 全息戰區浮標 (Holo Hazard Beacon) ---
+          ctx.strokeStyle = 'rgba(255, 230, 0, 0.7)';
+          ctx.lineWidth = 1.5;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = '#ffe600';
+
+          // Outer caution diamond
+          ctx.beginPath();
+          ctx.moveTo(0, -22);
+          ctx.lineTo(22, 0);
+          ctx.lineTo(0, 22);
+          ctx.lineTo(-22, 0);
+          ctx.closePath();
+          ctx.stroke();
+
+          // Inner warning mark
+          ctx.fillStyle = '#ffe600';
+          ctx.font = '700 12px "Orbitron", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('⚠', 0, 0);
+
+          // Digital Sector ID Tag
+          ctx.font = '600 9px "Orbitron", monospace';
+          ctx.fillStyle = 'rgba(0, 243, 255, 0.6)';
+          ctx.fillText(`SEC-${(hash % 90 + 10)}`, 0, 32);
+        }
+
+        ctx.restore();
+      }
     }
     ctx.restore();
+  }
+
+  function drawOffScreenIndicators(cam, viewW, viewH) {
+    const cx = viewW / 2;
+    const cy = viewH / 2;
+    const margin = 42;
+
+    for (const d of drops) {
+      if (!['magnet', 'heal', 'overdrive', 'nuke', 'chest'].includes(d.type)) continue;
+
+      const sx = d.x - cam.x;
+      const sy = d.y - cam.y;
+
+      if (sx >= margin && sx <= viewW - margin && sy >= margin && sy <= viewH - margin) continue;
+
+      const dx = sx - cx;
+      const dy = sy - cy;
+      const angle = Math.atan2(dy, dx);
+      const dist = Math.hypot(dx, dy);
+
+      const padX = viewW / 2 - margin;
+      const padY = viewH / 2 - margin;
+      const scaleX = Math.abs(dx) > 0 ? padX / Math.abs(dx) : 1;
+      const scaleY = Math.abs(dy) > 0 ? padY / Math.abs(dy) : 1;
+      const scale = Math.min(scaleX, scaleY);
+      const edgeX = cx + dx * scale;
+      const edgeY = cy + dy * scale;
+
+      let icon = '💎';
+      let color = '#00f3ff';
+      if (d.type === 'heal') { icon = '💚'; color = '#00ff66'; }
+      else if (d.type === 'magnet') { icon = '🧲'; color = '#00f3ff'; }
+      else if (d.type === 'overdrive') { icon = '⚡'; color = '#ffe600'; }
+      else if (d.type === 'nuke') { icon = '💣'; color = '#ff0055'; }
+      else if (d.type === 'chest') { icon = '📦'; color = '#00ffcc'; }
+
+      ctx.save();
+      ctx.translate(edgeX, edgeY);
+
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = color;
+      ctx.fillStyle = 'rgba(8, 12, 22, 0.9)';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(0, 0, 16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.rotate(angle);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(21, 0);
+      ctx.lineTo(15, -5);
+      ctx.lineTo(15, 5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.rotate(-angle);
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icon, 0, 0);
+
+      ctx.font = '700 9px "Orbitron", sans-serif';
+      ctx.fillStyle = color;
+      ctx.fillText(`${Math.round(dist / 10)}m`, 0, 20);
+
+      ctx.restore();
+    }
   }
 
   function drawPlayer(cam) {
@@ -1761,6 +2243,7 @@
   }
 
   function drawDrops(cam) {
+    const now = Date.now();
     for (const d of drops) {
       const dx = d.x - cam.x;
       const dy = d.y - cam.y;
@@ -1778,18 +2261,53 @@
         ctx.beginPath();
         ctx.arc(dx, dy, 6, 0, Math.PI * 2);
         ctx.fill();
-      } else if (d.type === 'heal') {
-        ctx.fillStyle = '#00ff66';
+      } else {
+        // Special Environmental Powerups with High-tech Hex Beacon Aura
+        const floatY = dy + Math.sin(now / 220 + d.x * 0.01) * 4;
+        const pulse = (Math.sin(now / 200) + 1) * 0.5;
+
+        let icon = '💎';
+        let mainColor = '#00f3ff';
+        if (d.type === 'heal') { icon = '✚'; mainColor = '#00ff66'; }
+        else if (d.type === 'magnet') { icon = '🧲'; mainColor = '#00f3ff'; }
+        else if (d.type === 'overdrive') { icon = '⚡'; mainColor = '#ffe600'; }
+        else if (d.type === 'nuke') { icon = '💣'; mainColor = '#ff0055'; }
+        else if (d.type === 'chest') { icon = '📦'; mainColor = '#00ffcc'; }
+
+        // Expanding beacon aura ring on the ground
+        ctx.strokeStyle = mainColor;
+        ctx.globalAlpha = 0.35 + pulse * 0.3;
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = mainColor;
+        ctx.beginPath();
+        ctx.arc(dx, dy, 16 + pulse * 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Futuristic hexagonal container
+        ctx.globalAlpha = 0.95;
+        ctx.translate(dx, floatY);
+        ctx.fillStyle = 'rgba(10, 16, 28, 0.92)';
+        ctx.beginPath();
+        for (let a = 0; a < 6; a++) {
+          const angle = (Math.PI / 3) * a;
+          const hx = Math.cos(angle) * 16;
+          const hy = Math.sin(angle) * 16;
+          if (a === 0) ctx.moveTo(hx, hy);
+          else ctx.lineTo(hx, hy);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Icon inside
+        ctx.font = '700 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = mainColor;
         ctx.shadowBlur = 10;
-        ctx.shadowColor = '#00ff66';
-        ctx.font = '16px sans-serif';
-        ctx.fillText('✚', dx - 6, dy + 6);
-      } else if (d.type === 'nuke') {
-        ctx.fillStyle = '#ff0033';
-        ctx.shadowBlur = 14;
-        ctx.shadowColor = '#ff0033';
-        ctx.font = '18px sans-serif';
-        ctx.fillText('💣', dx - 8, dy + 6);
+        ctx.shadowColor = mainColor;
+        ctx.fillText(icon, 0, 1);
       }
       ctx.restore();
     }

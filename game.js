@@ -89,16 +89,30 @@
     localStorage.setItem('cyber_pulse_meta_v2', JSON.stringify(meta));
   }
 
-  // Viewport & Scaling
+  // Viewport, Camera Zoom & Scaling
   let width = window.innerWidth;
   let height = window.innerHeight;
+  let dpr = 1;
+  let zoom = 1.0;
+
+  function updateZoom() {
+    const minDim = Math.min(width, height);
+    if (minDim < 500) {
+      zoom = 0.62; // Phones: Zoom out by ~38% so player has broad field of view
+    } else if (minDim < 800) {
+      zoom = 0.76; // Tablets / small screens
+    } else {
+      zoom = 0.90; // Desktop
+    }
+  }
+
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
     width = window.innerWidth;
     height = window.innerHeight;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    updateZoom();
   }
   window.addEventListener('resize', resize);
   resize();
@@ -117,26 +131,30 @@
     keys[e.key.toLowerCase()] = false;
   });
 
-  // Mobile Dash Button
+  // Mobile Dash Button (Larger & Stop Propagation to Joystick)
   const mobileDashBtn = document.getElementById('mobile-dash-btn');
   mobileDashBtn.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    window.soundFX.ensureContext();
     triggerDash();
-  });
-  mobileDashBtn.addEventListener('click', () => {
+  }, { passive: false });
+  mobileDashBtn.addEventListener('click', (e) => {
+    e.preventDefault();
     triggerDash();
   });
 
-  // Dynamic Virtual Joystick for Mobile
+  // Dynamic Virtual Joystick for Mobile (Multi-Touch Aware - never interrupts on Dash)
   const joystick = {
     active: false,
+    touchId: null,
     startX: 0,
     startY: 0,
     currentX: 0,
     currentY: 0,
     dx: 0,
     dy: 0,
-    maxRadius: 50
+    maxRadius: 55
   };
 
   const joyBase = document.getElementById('joystick-base');
@@ -145,50 +163,73 @@
   window.addEventListener('touchstart', (e) => {
     window.soundFX.ensureContext();
     if (gameState !== 'PLAYING') return;
-    const touch = e.touches[0];
-    if (touch.clientX > width - 120 && touch.clientY > height - 120) return; // avoid dash button
-    joystick.active = true;
-    joystick.startX = touch.clientX;
-    joystick.startY = touch.clientY;
-    joystick.currentX = touch.clientX;
-    joystick.currentY = touch.clientY;
-    joystick.dx = 0;
-    joystick.dy = 0;
 
-    joyBase.style.display = 'block';
-    joyBase.style.left = `${touch.clientX}px`;
-    joyBase.style.top = `${touch.clientY}px`;
-    joyStick.style.left = `${touch.clientX}px`;
-    joyStick.style.top = `${touch.clientY}px`;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      // Ignore if touch begins on bottom-right corner where dash button lives
+      if (touch.clientX > width - 150 && touch.clientY > height - 150) continue;
+
+      if (joystick.touchId === null) {
+        joystick.touchId = touch.identifier;
+        joystick.active = true;
+        joystick.startX = touch.clientX;
+        joystick.startY = touch.clientY;
+        joystick.currentX = touch.clientX;
+        joystick.currentY = touch.clientY;
+        joystick.dx = 0;
+        joystick.dy = 0;
+
+        joyBase.style.display = 'block';
+        joyBase.style.left = `${touch.clientX}px`;
+        joyBase.style.top = `${touch.clientY}px`;
+        joyStick.style.left = `${touch.clientX}px`;
+        joyStick.style.top = `${touch.clientY}px`;
+        break;
+      }
+    }
   }, { passive: false });
 
   window.addEventListener('touchmove', (e) => {
-    if (!joystick.active) return;
-    const touch = e.touches[0];
-    const diffX = touch.clientX - joystick.startX;
-    const diffY = touch.clientY - joystick.startY;
-    const dist = Math.hypot(diffX, diffY);
-    const angle = Math.atan2(diffY, diffX);
+    if (!joystick.active || joystick.touchId === null) return;
 
-    const clampedDist = Math.min(dist, joystick.maxRadius);
-    joystick.currentX = joystick.startX + Math.cos(angle) * clampedDist;
-    joystick.currentY = joystick.startY + Math.sin(angle) * clampedDist;
+    for (let i = 0; i < e.touches.length; i++) {
+      const touch = e.touches[i];
+      if (touch.identifier === joystick.touchId) {
+        const diffX = touch.clientX - joystick.startX;
+        const diffY = touch.clientY - joystick.startY;
+        const dist = Math.hypot(diffX, diffY);
+        const angle = Math.atan2(diffY, diffX);
 
-    joystick.dx = (joystick.currentX - joystick.startX) / joystick.maxRadius;
-    joystick.dy = (joystick.currentY - joystick.startY) / joystick.maxRadius;
+        const clampedDist = Math.min(dist, joystick.maxRadius);
+        joystick.currentX = joystick.startX + Math.cos(angle) * clampedDist;
+        joystick.currentY = joystick.startY + Math.sin(angle) * clampedDist;
 
-    joyStick.style.left = `${joystick.currentX}px`;
-    joyStick.style.top = `${joystick.currentY}px`;
+        joystick.dx = (joystick.currentX - joystick.startX) / joystick.maxRadius;
+        joystick.dy = (joystick.currentY - joystick.startY) / joystick.maxRadius;
+
+        joyStick.style.left = `${joystick.currentX}px`;
+        joyStick.style.top = `${joystick.currentY}px`;
+        break;
+      }
+    }
   }, { passive: false });
 
-  const endTouch = () => {
-    joystick.active = false;
-    joystick.dx = 0;
-    joystick.dy = 0;
-    joyBase.style.display = 'none';
+  const handleTouchEnd = (e) => {
+    if (!joystick.active || joystick.touchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      if (touch.identifier === joystick.touchId) {
+        joystick.active = false;
+        joystick.touchId = null;
+        joystick.dx = 0;
+        joystick.dy = 0;
+        joyBase.style.display = 'none';
+        break;
+      }
+    }
   };
-  window.addEventListener('touchend', endTouch);
-  window.addEventListener('touchcancel', endTouch);
+  window.addEventListener('touchend', handleTouchEnd);
+  window.addEventListener('touchcancel', handleTouchEnd);
 
   // Weapon & Fusion Definitions
   const WEAPON_REGISTRY = {
@@ -439,7 +480,9 @@
 
   function spawnRandomEnemy() {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Math.hypot(width, height) * 0.6 + 50;
+    const viewW = width / zoom;
+    const viewH = height / zoom;
+    const dist = Math.hypot(viewW, viewH) * 0.55 + 80;
     const x = player.x + Math.cos(angle) * dist;
     const y = player.y + Math.sin(angle) * dist;
 
@@ -1247,9 +1290,11 @@
       if (player.trail[i].alpha <= 0) player.trail.splice(i, 1);
     }
 
-    // Camera follow
-    camera.x += (player.x - width / 2 - camera.x) * 0.1;
-    camera.y += (player.y - height / 2 - camera.y) * 0.1;
+    // Camera follow smoothly with Zoom field of view
+    const viewW = width / zoom;
+    const viewH = height / zoom;
+    camera.x += (player.x - viewW / 2 - camera.x) * 0.1;
+    camera.y += (player.y - viewH / 2 - camera.y) * 0.1;
 
     // Updates
     updateEnemySpawns(dt);
@@ -1397,16 +1442,23 @@
     document.getElementById('exp-bar-fill').style.width = `${expPct}%`;
   }
 
-  // Render Game Scene
+  // Render Game Scene with camera Zoom
   function renderGame() {
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, 0, 0);
+
+    const viewW = width / zoom;
+    const viewH = height / zoom;
+
     ctx.fillStyle = '#05070e';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, viewW, viewH);
 
     const shake = window.particleSystem.screenShake;
     const cam = { x: camera.x + shake.x, y: camera.y + shake.y };
 
-    drawCyberGrid(cam);
+    drawCyberGrid(cam, viewW, viewH);
     window.particleSystem.drawGridMotes(ctx, cam);
     drawDrops(cam);
 
@@ -1456,9 +1508,11 @@
     }
 
     window.particleSystem.draw(ctx, cam);
+
+    ctx.restore();
   }
 
-  function drawCyberGrid(cam) {
+  function drawCyberGrid(cam, viewW, viewH) {
     const gridSize = 60;
     const offsetX = -cam.x % gridSize;
     const offsetY = -cam.y % gridSize;
@@ -1467,16 +1521,16 @@
     ctx.strokeStyle = 'rgba(0, 243, 255, 0.07)';
     ctx.lineWidth = 1;
 
-    for (let x = offsetX; x < width; x += gridSize) {
+    for (let x = offsetX; x < viewW + gridSize; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.lineTo(x, viewH);
       ctx.stroke();
     }
-    for (let y = offsetY; y < height; y += gridSize) {
+    for (let y = offsetY; y < viewH + gridSize; y += gridSize) {
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.lineTo(viewW, y);
       ctx.stroke();
     }
     ctx.restore();

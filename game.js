@@ -167,7 +167,7 @@
     for (let i = 0; i < e.changedTouches.length; i++) {
       const touch = e.changedTouches[i];
       // Ignore if touch begins on bottom-right corner where dash button lives
-      if (touch.clientX > width - 150 && touch.clientY > height - 150) continue;
+      if (touch.clientX > width - 150 && touch.clientY > height - 200) continue;
 
       if (joystick.touchId === null) {
         joystick.touchId = touch.identifier;

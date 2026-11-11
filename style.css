@@ -234,14 +234,15 @@ html, body {
 /* Mobile Dash Button */
 #mobile-dash-btn {
   position: absolute;
-  bottom: 28px;
+  bottom: 74px;
   right: 24px;
-  width: 92px;
-  height: 92px;
+  width: 86px;
+  height: 86px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 243, 255, 0.3) 0%, rgba(8, 12, 22, 0.95) 100%);
-  border: 3px solid var(--neon-cyan);
-  box-shadow: 0 0 25px rgba(0, 243, 255, 0.6), inset 0 0 20px rgba(0, 243, 255, 0.25);
+  background: radial-gradient(circle, rgba(0, 243, 255, 0.25) 0%, rgba(8, 12, 22, 0.94) 75%);
+  border: 2.5px solid var(--neon-cyan);
+  box-shadow: 0 0 25px rgba(0, 243, 255, 0.5), inset 0 0 16px rgba(0, 243, 255, 0.2);
+  backdrop-filter: blur(10px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -252,13 +253,29 @@ html, body {
   user-select: none;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.08s ease;
+  transition: transform 0.08s ease, box-shadow 0.15s ease;
+}
+
+/* Futuristic rotating dash outer ring */
+#mobile-dash-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(0, 243, 255, 0.45);
+  pointer-events: none;
+  animation: rotateDashRing 14s linear infinite;
+}
+
+@keyframes rotateDashRing {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 #mobile-dash-btn:active {
-  transform: scale(0.88);
+  transform: scale(0.90);
   background: var(--neon-cyan);
-  box-shadow: 0 0 40px var(--neon-cyan);
+  box-shadow: 0 0 35px var(--neon-cyan);
 }
 
 #mobile-dash-btn.on-cd {
@@ -267,8 +284,12 @@ html, body {
   box-shadow: none;
 }
 
+#mobile-dash-btn.on-cd::after {
+  opacity: 0.2;
+}
+
 #mobile-dash-btn .dash-icon {
-  font-size: 34px;
+  font-size: 32px;
   line-height: 1;
 }
 
@@ -642,6 +663,21 @@ html, body {
   border-color: var(--neon-cyan);
 }
 
+.menu-btn-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.menu-btn-row .btn-secondary {
+  flex: 1;
+  margin: 0;
+  padding: 12px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 /* Meta-progression Chip Shop */
 .chip-grid {
   display: flex;
@@ -820,9 +856,17 @@ html, body {
     min-width: 75px;
   }
   #mobile-dash-btn {
-    bottom: 22px;
-    right: 18px;
-    width: 86px;
-    height: 86px;
+    bottom: 74px;
+    right: 20px;
+    width: 84px;
+    height: 84px;
+  }
+  .menu-btn-row {
+    flex-direction: row;
+    gap: 8px;
+  }
+  .menu-btn-row .btn-secondary {
+    font-size: 12px;
+    padding: 11px 4px;
   }
 }

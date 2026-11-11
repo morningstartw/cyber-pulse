@@ -1,12 +1,13 @@
-// Cyber Pulse: Overdrive V2.0 - Core Game Engine
+// Cyber Pulse: Overdrive V4.0 - Core Game Engine
 (() => {
   const canvas = document.getElementById('game-canvas');
   const ctx = canvas.getContext('2d');
 
-  // Meta Progression (Chip Upgrades & Hangar saved in localStorage)
+  // Meta Progression (Chip Upgrades, Stage & Hangar saved in localStorage)
   const defaultMeta = {
     cores: 0,
     selectedShip: 'assault',
+    selectedStage: 'sector_1',
     unlockedShips: ['assault'],
     upgrades: {
       maxHp: 0,
@@ -14,7 +15,9 @@
       speed: 0,
       magnet: 0,
       cooldown: 0,
-      crit: 0
+      crit: 0,
+      expBonus: 0,
+      coreBonus: 0
     }
   };
 
@@ -24,8 +27,66 @@
     { id: 'speed', name: '重力推進噴口', desc: '機體移動速度 +10%', max: 5, cost: [40, 100, 200, 450, 900], bonus: (lvl) => 1 + lvl * 0.1 },
     { id: 'magnet', name: '量子磁吸場', desc: '晶體能量拾取範圍 +30%', max: 5, cost: [30, 80, 180, 400, 800], bonus: (lvl) => 1 + lvl * 0.3 },
     { id: 'cooldown', name: '高頻超頻晶片', desc: '所有武器冷卻縮減 +8%', max: 5, cost: [70, 160, 350, 700, 1500], bonus: (lvl) => 1 - lvl * 0.08 },
-    { id: 'crit', name: '精確瞄準矩陣', desc: '暴擊率 +6% (暴擊造成2倍傷害)', max: 5, cost: [50, 130, 280, 550, 1100], bonus: (lvl) => lvl * 0.06 }
+    { id: 'crit', name: '精確瞄準矩陣', desc: '暴擊率 +6% (暴擊造成2倍傷害)', max: 5, cost: [50, 130, 280, 550, 1100], bonus: (lvl) => lvl * 0.06 },
+    { id: 'expBonus', name: '超頻神經網路', desc: '戰鬥經驗值獲取量 +15%', max: 5, cost: [45, 110, 240, 480, 950], bonus: (lvl) => 1 + lvl * 0.15 },
+    { id: 'coreBonus', name: '核心萃取協定', desc: '核心晶片獲取量與結算獎勵 +20%', max: 5, cost: [80, 180, 400, 800, 1600], bonus: (lvl) => 1 + lvl * 0.2 }
   ];
+
+  // Stage / Level Registry
+  const STAGE_REGISTRY = {
+    sector_1: {
+      id: 'sector_1',
+      name: '🌃 霓虹矩陣',
+      stars: '★☆☆☆',
+      duration: 360, // 6 mins
+      coreMult: 1.0,
+      hpScale: 1.0,
+      spdScale: 1.0,
+      bgDark: '#05070e',
+      gridColor: '0, 243, 255',
+      accentHex: '#00f3ff',
+      desc: '標準 6 分鐘賽博網格戰區，鎮守首領：霓虹霸主 & 頂點核心。'
+    },
+    sector_2: {
+      id: 'sector_2',
+      name: '🌋 赤紅熔核帶',
+      stars: '★★☆☆',
+      duration: 480, // 8 mins
+      coreMult: 1.5,
+      hpScale: 1.25,
+      spdScale: 1.15,
+      bgDark: '#120406',
+      gridColor: '255, 70, 20',
+      accentHex: '#ff4614',
+      desc: '高溫熔岩星區，敵速+15%，出沒自爆熔岩蟲與首領【獄炎機神】。'
+    },
+    sector_3: {
+      id: 'sector_3',
+      name: '🌌 虛空星淵',
+      stars: '★★★☆',
+      duration: 480, // 8 mins
+      coreMult: 2.2,
+      hpScale: 1.55,
+      spdScale: 1.2,
+      bgDark: '#080314',
+      gridColor: '175, 50, 255',
+      accentHex: '#af32ff',
+      desc: '暗物質深淵，敵血+55%，出沒量子分裂體與首領【虛空利維坦】。'
+    },
+    sector_4: {
+      id: 'sector_4',
+      name: '♾️ 歐米茄無盡煉獄',
+      stars: '★★★★',
+      duration: Infinity, // Endless
+      coreMult: 3.0,
+      hpScale: 1.85,
+      spdScale: 1.28,
+      bgDark: '#110d02',
+      gridColor: '255, 200, 0',
+      accentHex: '#ffc800',
+      desc: '無時間上限終極煉獄！全敵種混編、首領輪番降臨，核心收益 300%！'
+    }
+  };
 
   // Ship Hangar Registry
   const SHIP_REGISTRY = {
@@ -40,9 +101,11 @@
       hpMult: 1.0,
       spdMult: 1.0,
       critBonus: 0.10,
+      cdrBonus: 0,
+      magBonus: 0,
       dashCharges: 1,
       dashCd: 2.2,
-      startWeapons: { blaster: 1, blades: 0, lightning: 0, nova: 0, drone: 0, shield: 0 }
+      startWeapons: { blaster: 1 }
     },
     phantom: {
       id: 'phantom',
@@ -52,12 +115,14 @@
       desc: '超高航速、具備 2 次連續衝刺充能！起始武裝為旋轉光刃，機動性極致飄逸。',
       cost: 150,
       color: '#ff00aa',
-      hpMult: 0.8,
+      hpMult: 0.85,
       spdMult: 1.25,
-      critBonus: 0.05,
+      critBonus: 0.08,
+      cdrBonus: 0,
+      magBonus: 0,
       dashCharges: 2,
       dashCd: 1.8,
-      startWeapons: { blaster: 0, blades: 1, lightning: 0, nova: 0, drone: 0, shield: 0 }
+      startWeapons: { blades: 1 }
     },
     titan: {
       id: 'titan',
@@ -67,23 +132,62 @@
       desc: '厚實裝甲與常態護盾，開局持連鎖電弧與相位護盾，衝撞反傷撕裂敵群。',
       cost: 250,
       color: '#ffaa00',
-      hpMult: 1.5,
-      spdMult: 0.88,
+      hpMult: 1.55,
+      spdMult: 0.90,
       critBonus: 0.0,
+      cdrBonus: 0,
+      magBonus: 0,
       dashCharges: 1,
-      dashCd: 3.0,
-      startWeapons: { blaster: 0, blades: 0, lightning: 1, nova: 0, drone: 0, shield: 1 }
+      dashCd: 2.8,
+      startWeapons: { lightning: 1, shield: 1 }
+    },
+    valkyrie: {
+      id: 'valkyrie',
+      name: 'VALKYRIE-7 女武神',
+      role: '稜鏡光束特化機',
+      avatar: '☄️',
+      desc: '搭載高能光學核心，開局配備【稜鏡聚焦雷射 + 浮游支援機】，自帶 15% 冷卻縮減！',
+      cost: 350,
+      color: '#ff3366',
+      hpMult: 1.05,
+      spdMult: 1.12,
+      critBonus: 0.12,
+      cdrBonus: 0.15,
+      magBonus: 0,
+      dashCharges: 2,
+      dashCd: 2.0,
+      startWeapons: { laser: 1, drone: 1 }
+    },
+    frostbite: {
+      id: 'frostbite',
+      name: 'ZERO-K 極凍零號',
+      role: '極寒領域控場機',
+      avatar: '❄️',
+      desc: '量子低溫戰術機，開局配備【絕對零度冰環 + 量子迴旋鏢】，自帶 +40% 磁吸範圍與 2 次衝刺！',
+      cost: 450,
+      color: '#00ffcc',
+      hpMult: 1.2,
+      spdMult: 1.10,
+      critBonus: 0.08,
+      cdrBonus: 0.08,
+      magBonus: 0.40,
+      dashCharges: 2,
+      dashCd: 1.9,
+      startWeapons: { frost: 1, boomerang: 1 }
     }
   };
 
   let meta = JSON.parse(localStorage.getItem('cyber_pulse_meta_v2') || 'null');
   if (!meta) {
     const oldMeta = JSON.parse(localStorage.getItem('cyber_pulse_meta') || 'null');
-    meta = defaultMeta;
+    meta = JSON.parse(JSON.stringify(defaultMeta));
     if (oldMeta) {
       meta.cores = oldMeta.cores || 0;
       meta.upgrades = Object.assign(meta.upgrades, oldMeta.upgrades || {});
     }
+  } else {
+    meta.selectedStage = meta.selectedStage || 'sector_1';
+    meta.upgrades = Object.assign({}, defaultMeta.upgrades, meta.upgrades || {});
   }
   function saveMeta() {
     localStorage.setItem('cyber_pulse_meta_v2', JSON.stringify(meta));
@@ -310,6 +414,58 @@
         { maxShield: 130, regenTime: 5 },
         { maxShield: 180, regenTime: 3.5, label: '【超限滿級】絕對防衛矩陣' }
       ]
+    },
+    boomerang: {
+      name: '量子迴旋鏢',
+      type: '迴旋切割',
+      icon: '🪃',
+      desc: '投擲高能電漿迴旋鏢，穿透敵陣後折返機體，來回切割路徑敵軍',
+      levels: [
+        { cooldown: 1.5, damage: 28, count: 1, speed: 11 },
+        { cooldown: 1.35, damage: 36, count: 2, speed: 12 },
+        { cooldown: 1.2, damage: 45, count: 2, speed: 13 },
+        { cooldown: 1.0, damage: 56, count: 3, speed: 14 },
+        { cooldown: 0.8, damage: 72, count: 4, speed: 15, label: '【超限滿級】次元迴旋斬' }
+      ]
+    },
+    laser: {
+      name: '稜鏡聚焦雷射',
+      type: '高能光束',
+      icon: '🔦',
+      desc: '鎖定目標發射瞬間貫穿的高溫聚焦雷射，直線融化一切重甲敵機',
+      levels: [
+        { cooldown: 1.7, damage: 48, beams: 1, width: 6 },
+        { cooldown: 1.45, damage: 65, beams: 1, width: 8 },
+        { cooldown: 1.25, damage: 82, beams: 2, width: 9 },
+        { cooldown: 1.05, damage: 105, beams: 2, width: 11 },
+        { cooldown: 0.82, damage: 140, beams: 3, width: 14, label: '【超限滿級】死星稜鏡砲' }
+      ]
+    },
+    mine: {
+      name: '虛空引力地雷',
+      type: '戰術佈雷',
+      icon: '💣',
+      desc: '隨移動在場上佈下高爆電磁地雷，敵人觸發時引爆大範圍電漿震波',
+      levels: [
+        { cooldown: 2.2, damage: 60, count: 1, radius: 90 },
+        { cooldown: 1.9, damage: 80, count: 1, radius: 105 },
+        { cooldown: 1.6, damage: 105, count: 2, radius: 115 },
+        { cooldown: 1.35, damage: 130, count: 2, radius: 130 },
+        { cooldown: 1.05, damage: 170, count: 3, radius: 150, label: '【超限滿級】量子毀滅雷區' }
+      ]
+    },
+    frost: {
+      name: '絕對零度冰環',
+      type: '極寒控場',
+      icon: '❄️',
+      desc: '在機體周圍張開常駐極寒力場，持續凍傷範圍內敵軍並大幅降低其航速',
+      levels: [
+        { radius: 110, damage: 15, slow: 0.65 },
+        { radius: 130, damage: 22, slow: 0.58 },
+        { radius: 150, damage: 30, slow: 0.50 },
+        { radius: 175, damage: 40, slow: 0.42 },
+        { radius: 205, damage: 55, slow: 0.35, label: '【超限滿級】永凍極地領域' }
+      ]
     }
   };
 
@@ -335,24 +491,52 @@
       icon: '🪐',
       desc: '【浮游機 + 護盾 終極融合】解鎖 4 具全域作戰衛星，提供巨量護盾並發射無限暴風飛彈！',
       req: ['drone', 'shield']
+    },
+    chrono_blizzard: {
+      name: '極光時空暴雪',
+      type: '傳奇超武',
+      icon: '🌨️',
+      desc: '【迴旋鏢 + 絕對零度 終極融合】召喚全場極寒冰晶風暴凍結敵軍，並齊射 6 枚巨型次元斬刃！',
+      req: ['boomerang', 'frost']
+    },
+    omega_annihilator: {
+      name: '歐米茄毀滅死光',
+      type: '傳奇超武',
+      icon: '☄️',
+      desc: '【聚焦雷射 + 引力地雷 終極融合】機體爆發 360 度彩虹稜鏡死光橫掃全場，並引發連環量子爆破！',
+      req: ['laser', 'mine']
     }
   };
 
   // Game Runtime State
   let gameState = 'MENU';
+  let currentStage = STAGE_REGISTRY.sector_1;
   let gameTime = 0;
   let killCount = 0;
   let sessionCores = 0;
   let totalDamageDealt = 0;
   let bossSpawned3m = false;
   let bossSpawned7m = false;
+  let nextEndlessBossTime = 150;
+  let nextEliteTime = 45;
+  let warningBannerTimer = 0;
 
   const camera = { x: 0, y: 0 };
   let player;
   let enemies = [];
   let bullets = [];
   let enemyBullets = [];
+  let mines = [];
+  let laserBeams = [];
   let drops = [];
+
+  function showWarningBanner(text, duration = 3.2) {
+    const banner = document.getElementById('warning-banner');
+    if (!banner) return;
+    banner.textContent = text;
+    banner.classList.add('active');
+    warningBannerTimer = duration;
+  }
 
   // Create Player based on Selected Ship & Chips
   function createPlayer() {
@@ -361,9 +545,11 @@
     const hpBonus = chipDefs[0].bonus(meta.upgrades.maxHp || 0) * ship.hpMult;
     const dmgBonus = chipDefs[1].bonus(meta.upgrades.damage || 0);
     const spdBonus = chipDefs[2].bonus(meta.upgrades.speed || 0) * ship.spdMult;
-    const magBonus = chipDefs[3].bonus(meta.upgrades.magnet || 0);
-    const cdrBonus = chipDefs[4].bonus(meta.upgrades.cooldown || 0);
+    const magBonus = chipDefs[3].bonus(meta.upgrades.magnet || 0) * (1 + (ship.magBonus || 0));
+    const cdrBonus = chipDefs[4].bonus(meta.upgrades.cooldown || 0) * (1 - (ship.cdrBonus || 0));
     const critBonus = chipDefs[5].bonus(meta.upgrades.crit || 0) + ship.critBonus;
+    const expMult = chipDefs[6].bonus(meta.upgrades.expBonus || 0);
+    const coreMult = chipDefs[7].bonus(meta.upgrades.coreBonus || 0) * (currentStage ? currentStage.coreMult : 1.0);
 
     const baseHp = 100 * hpBonus;
 
@@ -387,6 +573,8 @@
       magnetRadius: 100 * magBonus,
       cdr: cdrBonus,
       critRate: 0.05 + critBonus,
+      expMult,
+      coreMult,
       level: 1,
       exp: 0,
       nextExp: 35,
@@ -407,7 +595,9 @@
       globalMagnetTimer: 0,
       weapons: Object.assign({
         blaster: 0, blades: 0, lightning: 0, nova: 0, drone: 0, shield: 0,
-        orbital_judgement: 0, vortex_singularity: 0, aegis_fortress: 0
+        boomerang: 0, laser: 0, mine: 0, frost: 0,
+        orbital_judgement: 0, vortex_singularity: 0, aegis_fortress: 0,
+        chrono_blizzard: 0, omega_annihilator: 0
       }, ship.startWeapons),
       timers: {
         blaster: 0,
@@ -415,9 +605,15 @@
         lightning: 0,
         nova: 0,
         drone: 0,
+        boomerang: 0,
+        laser: 0,
+        mine: 0,
+        frost: 0,
         orbital_judgement: 0,
         vortex_singularity: 0,
-        aegis_fortress: 0
+        aegis_fortress: 0,
+        chrono_blizzard: 0,
+        omega_annihilator: 0
       }
     };
 
@@ -514,24 +710,45 @@
       const count = 2 + Math.min(10, Math.floor(gameTime / 30) * 2);
       for (let i = 0; i < count; i++) {
         if (enemies.length >= 185) break;
-        spawnRandomEnemy();
+        spawnRandomEnemy(false);
       }
+    }
+
+    // Periodic Golden Elite Enemy (every 45s)
+    if (gameTime >= nextEliteTime) {
+      nextEliteTime += 45;
+      spawnRandomEnemy(true);
     }
 
     // Periodic Massive Swarm Invasions (Surrounding Rings of Monsters)
     if (gameTime >= nextSwarmTime) {
       nextSwarmTime += 40; // Wave every 40s
+      showWarningBanner('⚠ 警告：大規模賽博蟲群包圍網接近 ⚠', 2.8);
       spawnSwarmRing(28 + Math.min(28, Math.floor(gameTime / 15)));
     }
 
-    // Boss spawns
-    if (gameTime >= 180 && !bossSpawned3m) {
-      bossSpawned3m = true;
-      spawnBoss('OVERLORD');
-    }
-    if (gameTime >= 420 && !bossSpawned7m) {
-      bossSpawned7m = true;
-      spawnBoss('APEX');
+    // Stage Boss spawns
+    if (currentStage.id === 'sector_4') {
+      if (gameTime >= nextEndlessBossTime) {
+        nextEndlessBossTime += 135;
+        const tiers = ['OVERLORD', 'VULCAN', 'LEVIATHAN', 'APEX'];
+        const pick = tiers[Math.floor((gameTime / 135) % tiers.length)];
+        spawnBoss(pick);
+      }
+    } else {
+      const midTime = currentStage.id === 'sector_1' ? 150 : 180;
+      const finalTime = currentStage.id === 'sector_1' ? 300 : 400;
+
+      if (gameTime >= midTime && !bossSpawned3m) {
+        bossSpawned3m = true;
+        if (currentStage.id === 'sector_2') spawnBoss('VULCAN');
+        else if (currentStage.id === 'sector_3') spawnBoss('LEVIATHAN');
+        else spawnBoss('OVERLORD');
+      }
+      if (gameTime >= finalTime && !bossSpawned7m) {
+        bossSpawned7m = true;
+        spawnBoss('APEX');
+      }
     }
   }
 
@@ -543,29 +760,34 @@
     const viewW = width / zoom;
     const viewH = height / zoom;
     const radius = Math.hypot(viewW, viewH) * 0.55 + 90;
+    const hpMult = currentStage.hpScale;
+    const spdMult = currentStage.spdScale;
 
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * Math.PI * 2;
       const x = player.x + Math.cos(angle) * radius;
       const y = player.y + Math.sin(angle) * radius;
+      const hp = (16 + gameTime * 0.3) * hpMult;
 
       enemies.push({
         x,
         y,
         type: 'drone',
-        hp: 16 + gameTime * 0.3,
-        maxHp: 16 + gameTime * 0.3,
-        speed: 2.3,
+        hp,
+        maxHp: hp,
+        speed: 2.3 * spdMult,
         radius: 11,
         color: '#ff0055', // Red glowing swarm
         expVal: 8,
         shootTimer: 0,
-        hitFlash: 0
+        hitFlash: 0,
+        slowTimer: 0,
+        slowFactor: 1
       });
     }
   }
 
-  function spawnRandomEnemy() {
+  function spawnRandomEnemy(isElite = false) {
     const angle = Math.random() * Math.PI * 2;
     const viewW = width / zoom;
     const viewH = height / zoom;
@@ -576,11 +798,15 @@
     const r = Math.random();
     let type = 'drone';
 
-    if (gameTime > 120 && r < 0.25) {
+    if ((currentStage.id === 'sector_2' || currentStage.id === 'sector_4' || gameTime > 90) && r < 0.18) {
+      type = 'bomber';
+    } else if ((currentStage.id === 'sector_3' || currentStage.id === 'sector_4' || gameTime > 140) && r < 0.34) {
+      type = 'splitter';
+    } else if (gameTime > 110 && r < 0.52) {
       type = 'sentinel';
-    } else if (gameTime > 50 && r < 0.55) {
+    } else if (gameTime > 45 && r < 0.75) {
       type = 'crawler';
-    } else if (gameTime > 200 && r < 0.2) {
+    } else if (gameTime > 180 && r < 0.90) {
       type = 'stalker';
     }
 
@@ -610,12 +836,35 @@
       radius = 13;
       color = '#9d00ff';
       expVal = 50;
+    } else if (type === 'bomber') {
+      hp = 38 + gameTime * 0.7;
+      speed = 2.85;
+      radius = 14;
+      color = '#ff5500';
+      expVal = 28;
+    } else if (type === 'splitter') {
+      hp = 85 + gameTime * 1.15;
+      speed = 1.5;
+      radius = 18;
+      color = '#00ffaa';
+      expVal = 35;
+    }
+
+    hp *= currentStage.hpScale;
+    speed *= currentStage.spdScale;
+
+    if (isElite) {
+      hp *= 5.5;
+      radius = Math.round(radius * 1.45);
+      color = '#ffd700';
+      expVal *= 5;
     }
 
     enemies.push({
       x,
       y,
       type,
+      isElite,
       hp,
       maxHp: hp,
       speed,
@@ -623,7 +872,9 @@
       color,
       expVal,
       shootTimer,
-      hitFlash: 0
+      hitFlash: 0,
+      slowTimer: 0,
+      slowFactor: 1
     });
   }
 
@@ -635,22 +886,54 @@
     const x = player.x + Math.cos(angle) * 350;
     const y = player.y + Math.sin(angle) * 350;
 
-    const isApex = tier === 'APEX';
+    let name = '【OVERLORD】霓虹霸主';
+    let hp = 2800 * currentStage.hpScale;
+    let speed = 1.15;
+    let radius = 38;
+    let color = '#ffff00';
+    let isApex = false;
+
+    if (tier === 'VULCAN') {
+      name = '【VULCAN】獄炎機神';
+      hp = 4200 * currentStage.hpScale;
+      speed = 1.3;
+      radius = 42;
+      color = '#ff4500';
+    } else if (tier === 'LEVIATHAN') {
+      name = '【LEVIATHAN】虛空利維坦';
+      hp = 5600 * currentStage.hpScale;
+      speed = 1.25;
+      radius = 44;
+      color = '#b829ff';
+    } else if (tier === 'APEX') {
+      name = '【APEX CORE】頂點核心';
+      hp = 7500 * currentStage.hpScale;
+      speed = 1.4;
+      radius = 46;
+      color = '#ff0033';
+      isApex = true;
+    }
+
+    showWarningBanner(`⚠ 首領降臨：${name} ⚠`, 4.0);
+
     enemies.push({
       x,
       y,
       type: 'boss',
+      bossTier: tier,
       isApex,
-      name: isApex ? '【APEX CORE】頂點核心' : '【OVERLORD】霓虹霸主',
-      hp: isApex ? 7000 : 2800,
-      maxHp: isApex ? 7000 : 2800,
-      speed: isApex ? 1.4 : 1.1,
-      radius: isApex ? 46 : 38,
-      color: isApex ? '#ff0033' : '#ffff00',
+      name,
+      hp,
+      maxHp: hp,
+      speed,
+      radius,
+      color,
       expVal: 800,
       attackTimer: 0,
       spiralAngle: 0,
-      hitFlash: 0
+      hitFlash: 0,
+      slowTimer: 0,
+      slowFactor: 1
     });
   }
 
@@ -724,6 +1007,49 @@
       }
     }
 
+    // 7. Quantum Boomerang
+    if (player.weapons.boomerang > 0) {
+      const cfg = WEAPON_REGISTRY.boomerang.levels[player.weapons.boomerang - 1];
+      player.timers.boomerang += dt;
+      const cd = cfg.cooldown * effCdr;
+      if (player.timers.boomerang >= cd) {
+        player.timers.boomerang = 0;
+        fireBoomerang(cfg);
+      }
+    }
+
+    // 8. Prism Laser Beam
+    if (player.weapons.laser > 0) {
+      const cfg = WEAPON_REGISTRY.laser.levels[player.weapons.laser - 1];
+      player.timers.laser += dt;
+      const cd = cfg.cooldown * effCdr;
+      if (player.timers.laser >= cd) {
+        player.timers.laser = 0;
+        fireLaser(cfg);
+      }
+    }
+
+    // 9. Cyber Proximity Mines
+    if (player.weapons.mine > 0) {
+      const cfg = WEAPON_REGISTRY.mine.levels[player.weapons.mine - 1];
+      player.timers.mine += dt;
+      const cd = cfg.cooldown * effCdr;
+      if (player.timers.mine >= cd) {
+        player.timers.mine = 0;
+        deployMines(cfg);
+      }
+    }
+
+    // 10. Cryo Frost Field
+    if (player.weapons.frost > 0) {
+      const cfg = WEAPON_REGISTRY.frost.levels[player.weapons.frost - 1];
+      player.timers.frost += dt;
+      if (player.timers.frost >= 0.35) {
+        player.timers.frost = 0;
+        updateFrostField(cfg);
+      }
+    }
+
     // --- SUPER WEAPONS ---
     // A. Orbital Judgement
     if (player.weapons.orbital_judgement > 0) {
@@ -752,6 +1078,26 @@
       if (player.timers.aegis_fortress >= cd) {
         player.timers.aegis_fortress = 0;
         fireAegisMissiles();
+      }
+    }
+
+    // D. Chrono Blizzard
+    if (player.weapons.chrono_blizzard > 0) {
+      player.timers.chrono_blizzard += dt;
+      const cd = 3.4 * effCdr;
+      if (player.timers.chrono_blizzard >= cd) {
+        player.timers.chrono_blizzard = 0;
+        triggerChronoBlizzard();
+      }
+    }
+
+    // E. Omega Annihilator
+    if (player.weapons.omega_annihilator > 0) {
+      player.timers.omega_annihilator += dt;
+      const cd = 3.0 * effCdr;
+      if (player.timers.omega_annihilator >= cd) {
+        player.timers.omega_annihilator = 0;
+        triggerOmegaAnnihilator();
       }
     }
   }
@@ -903,6 +1249,109 @@
     }
   }
 
+  function fireBoomerang(cfg) {
+    if (enemies.length === 0) return;
+    const target = getClosestEnemy(player.x, player.y);
+    const baseAngle = target ? Math.atan2(target.y - player.y, target.x - player.x) : player.rotation;
+    window.soundFX.blade();
+
+    for (let i = 0; i < cfg.count; i++) {
+      const spread = (i - (cfg.count - 1) / 2) * 0.35;
+      const angle = baseAngle + spread;
+      bullets.push({
+        x: player.x,
+        y: player.y,
+        vx: Math.cos(angle) * cfg.speed,
+        vy: Math.sin(angle) * cfg.speed,
+        speed: cfg.speed,
+        isBoomerang: true,
+        returnPhase: false,
+        age: 0,
+        maxOutTime: 0.52,
+        damage: cfg.damage * player.damageMult,
+        pierce: 99,
+        life: 1.8,
+        color: '#00ffaa',
+        radius: 11,
+        hitList: new Set()
+      });
+    }
+  }
+
+  function fireLaser(cfg) {
+    if (enemies.length === 0) return;
+    window.soundFX.shoot(1200);
+
+    for (let b = 0; b < cfg.beams; b++) {
+      const target = b === 0 ? getClosestEnemy(player.x, player.y) : enemies[Math.floor(Math.random() * enemies.length)];
+      if (!target) continue;
+
+      const angle = Math.atan2(target.y - player.y, target.x - player.x);
+      const beamLen = 580;
+      const x2 = player.x + Math.cos(angle) * beamLen;
+      const y2 = player.y + Math.sin(angle) * beamLen;
+
+      laserBeams.push({
+        x1: player.x,
+        y1: player.y,
+        x2,
+        y2,
+        width: cfg.width,
+        color: '#ff007f',
+        life: 0.22,
+        maxLife: 0.22
+      });
+
+      // Line segment collision check against enemies
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!e) continue;
+        const dx = e.x - player.x;
+        const dy = e.y - player.y;
+        const proj = dx * cosA + dy * sinA;
+        if (proj < 0 || proj > beamLen) continue;
+        const perp = Math.abs(-dx * sinA + dy * cosA);
+        if (perp <= e.radius + cfg.width + 6) {
+          damageEnemy(e, cfg.damage * player.damageMult);
+        }
+      }
+    }
+  }
+
+  function deployMines(cfg) {
+    window.soundFX.click();
+    for (let i = 0; i < cfg.count; i++) {
+      if (mines.length >= 18) mines.shift();
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 25 + Math.random() * 35;
+      mines.push({
+        x: player.x + Math.cos(angle) * dist,
+        y: player.y + Math.sin(angle) * dist,
+        blastRadius: cfg.radius,
+        damage: cfg.damage * player.damageMult,
+        life: 14.0
+      });
+    }
+  }
+
+  function updateFrostField(cfg) {
+    const rSq = cfg.radius * cfg.radius;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!e) continue;
+      const dx = e.x - player.x;
+      const dy = e.y - player.y;
+      if (Math.abs(dx) > cfg.radius || Math.abs(dy) > cfg.radius) continue;
+      if (dx * dx + dy * dy <= rSq) {
+        e.slowTimer = 0.8;
+        e.slowFactor = cfg.slow;
+        damageEnemy(e, cfg.damage * player.damageMult);
+      }
+    }
+  }
+
   // Super Weapon Triggers
   function triggerOrbitalJudgement() {
     if (enemies.length === 0) return;
@@ -977,6 +1426,87 @@
     }
   }
 
+  function triggerChronoBlizzard() {
+    window.soundFX.nova();
+    window.particleSystem.triggerScreenShake(10, 0.3);
+    window.particleSystem.addExplosion(player.x, player.y, '#00ffff', 22);
+
+    // Freeze & damage all nearby enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!e) continue;
+      const dx = e.x - player.x;
+      const dy = e.y - player.y;
+      if (Math.abs(dx) > 340 || Math.abs(dy) > 340) continue;
+      if (dx * dx + dy * dy <= 340 * 340) {
+        e.slowTimer = 3.0;
+        e.slowFactor = 0.25;
+        damageEnemy(e, 210 * player.damageMult);
+      }
+    }
+
+    // Launch 6 giant frost boomerangs in 360 ring
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 + (Date.now() * 0.001);
+      bullets.push({
+        x: player.x,
+        y: player.y,
+        vx: Math.cos(angle) * 14,
+        vy: Math.sin(angle) * 14,
+        speed: 14,
+        isBoomerang: true,
+        returnPhase: false,
+        age: 0,
+        maxOutTime: 0.6,
+        damage: 145 * player.damageMult,
+        pierce: 99,
+        life: 2.0,
+        color: '#00ffff',
+        radius: 15,
+        hitList: new Set()
+      });
+    }
+  }
+
+  function triggerOmegaAnnihilator() {
+    window.soundFX.orbitalBeam();
+    window.particleSystem.triggerScreenShake(14, 0.35);
+
+    const beamLen = 540;
+    const baseRot = Date.now() * 0.002;
+    for (let b = 0; b < 6; b++) {
+      const angle = baseRot + (b / 6) * Math.PI * 2;
+      const x2 = player.x + Math.cos(angle) * beamLen;
+      const y2 = player.y + Math.sin(angle) * beamLen;
+
+      laserBeams.push({
+        x1: player.x,
+        y1: player.y,
+        x2,
+        y2,
+        width: 15,
+        color: b % 2 === 0 ? '#ffd700' : '#ff0055',
+        life: 0.30,
+        maxLife: 0.30
+      });
+
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        if (!e) continue;
+        const dx = e.x - player.x;
+        const dy = e.y - player.y;
+        const proj = dx * cosA + dy * sinA;
+        if (proj < 0 || proj > beamLen) continue;
+        const perp = Math.abs(-dx * sinA + dy * cosA);
+        if (perp <= e.radius + 22) {
+          damageEnemy(e, 320 * player.damageMult);
+        }
+      }
+    }
+  }
+
   function damageEnemy(e, rawDamage) {
     const isCrit = Math.random() < player.critRate;
     const finalDamage = isCrit ? rawDamage * 2.0 : rawDamage;
@@ -999,11 +1529,39 @@
     window.soundFX.explosion(isBoss);
     window.particleSystem.addExplosion(e.x, e.y, e.color, isBoss ? 40 : 8, isBoss);
 
+    // Special enemy death behaviors
+    if (e.type === 'splitter' && !e.isMini && enemies.length < 180) {
+      for (let s = 0; s < 2; s++) {
+        const a = Math.random() * Math.PI * 2;
+        enemies.push({
+          x: e.x + Math.cos(a) * 16,
+          y: e.y + Math.sin(a) * 16,
+          type: 'drone',
+          isMini: true,
+          hp: 22 * currentStage.hpScale,
+          maxHp: 22 * currentStage.hpScale,
+          speed: 2.7 * currentStage.spdScale,
+          radius: 9,
+          color: '#00ffaa',
+          expVal: 12,
+          shootTimer: 0,
+          hitFlash: 0,
+          slowTimer: 0,
+          slowFactor: 1
+        });
+      }
+    }
+
     if (isBoss) {
       window.particleSystem.triggerScreenShake(15, 0.5);
-      drops.push({ x: e.x, y: e.y, type: 'core', val: 50 });
-      drops.push({ x: e.x + 20, y: e.y, type: 'heal', val: 50 });
-      drops.push({ x: e.x - 20, y: e.y, type: 'exp', val: 400 });
+      drops.push({ x: e.x, y: e.y, type: 'core', val: Math.round(60 * player.coreMult) });
+      drops.push({ x: e.x + 25, y: e.y, type: 'chest' });
+      drops.push({ x: e.x - 25, y: e.y, type: 'heal', val: 60 });
+      drops.push({ x: e.x, y: e.y + 25, type: 'exp', val: 450 });
+    } else if (e.isElite) {
+      drops.push({ x: e.x, y: e.y, type: 'core', val: Math.round(20 * player.coreMult) });
+      drops.push({ x: e.x + 15, y: e.y, type: 'chest' });
+      drops.push({ x: e.x - 15, y: e.y, type: 'exp', val: e.expVal });
     } else {
       // Consolidate EXP drops when pool exceeds 160 so zero EXP is lost and FPS stays 60
       if (drops.length > 160) {
@@ -1023,8 +1581,8 @@
       }
 
       const r = Math.random();
-      if (r < 0.08) {
-        drops.push({ x: e.x, y: e.y, type: 'core', val: 5 });
+      if (r < 0.085) {
+        drops.push({ x: e.x, y: e.y, type: 'core', val: Math.max(1, Math.round(5 * player.coreMult)) });
       } else if (r < 0.012) {
         drops.push({ x: e.x, y: e.y, type: 'nuke' });
       } else if (r < 0.03 && player.hp < player.maxHp * 0.7) {
@@ -1166,6 +1724,7 @@
     if (isFusion) {
       window.soundFX.fusion();
       player.weapons[key] = 1;
+      updateWeaponBarHUD();
       return;
     }
 
@@ -1177,6 +1736,60 @@
       return;
     }
     player.weapons[key] = (player.weapons[key] || 0) + 1;
+    updateWeaponBarHUD();
+  }
+
+  function updateWeaponBarHUD() {
+    const bar = document.getElementById('hud-weapons-bar');
+    if (!bar || !player) return;
+    bar.innerHTML = '';
+
+    for (const [fKey, fDef] of Object.entries(FUSION_REGISTRY)) {
+      if (player.weapons[fKey] > 0) {
+        const pill = document.createElement('div');
+        pill.className = 'weapon-slot-pill fusion';
+        pill.innerHTML = `<span>${fDef.icon}</span><span>MAX</span>`;
+        bar.appendChild(pill);
+      }
+    }
+
+    for (const [wKey, wDef] of Object.entries(WEAPON_REGISTRY)) {
+      const lvl = player.weapons[wKey] || 0;
+      if (lvl > 0) {
+        const pill = document.createElement('div');
+        pill.className = 'weapon-slot-pill';
+        pill.innerHTML = `<span>${wDef.icon}</span><span>${lvl >= 5 ? 'MAX' : 'LV.' + lvl}</span>`;
+        bar.appendChild(pill);
+      }
+    }
+  }
+
+  // Stage Selector UI in Main Menu
+  function renderStageSelectGrid() {
+    const grid = document.getElementById('stage-select-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    Object.values(STAGE_REGISTRY).forEach((st) => {
+      const isSelected = meta.selectedStage === st.id;
+      const card = document.createElement('div');
+      card.className = `stage-card ${isSelected ? 'active' : ''}`;
+      card.innerHTML = `
+        <div class="stage-card-header">
+          <span class="stage-card-name" style="color: ${isSelected ? st.accentHex : '#fff'}">${st.name}</span>
+          <span class="stage-card-mult">核心 ${st.coreMult}x</span>
+        </div>
+        <div class="stage-card-desc">${st.stars}｜${st.desc}</div>
+      `;
+      card.addEventListener('click', () => {
+        meta.selectedStage = st.id;
+        currentStage = st;
+        saveMeta();
+        window.soundFX.click();
+        renderStageSelectGrid();
+      });
+      grid.appendChild(card);
+    });
   }
 
   // End Game
@@ -1184,12 +1797,19 @@
     gameState = isVictory ? 'VICTORY' : 'GAMEOVER';
     window.soundFX.stopBGM();
 
+    if (isVictory) {
+      sessionCores += Math.round(80 * currentStage.coreMult);
+    }
+
     meta.cores += sessionCores;
     saveMeta();
 
+    const banner = document.getElementById('warning-banner');
+    if (banner) banner.classList.remove('active');
+
     const screen = document.getElementById('settlement-modal');
-    document.getElementById('settlement-title').textContent = isVictory ? '任務圓滿完成 - MISSION CLEARED' : '機體信號中斷 - SYSTEM FAILURE';
-    document.getElementById('settlement-sub').textContent = isVictory ? '你成功肅清了所有霓虹威脅，登頂賽博王座！' : '核心能源耗盡，但收集的資料晶片已成功上傳。';
+    document.getElementById('settlement-title').textContent = isVictory ? `戰區肅清 - ${currentStage.name}` : '機體信號中斷 - SYSTEM FAILURE';
+    document.getElementById('settlement-sub').textContent = isVictory ? '你成功征服此戰區，獲得額外通關核心獎勵！' : '核心能源耗盡，但收集的資料晶片已成功上傳。';
 
     const min = Math.floor(gameTime / 60);
     const sec = Math.floor(gameTime % 60);
@@ -1206,10 +1826,13 @@
     window.soundFX.ensureContext();
     window.soundFX.startBGM();
 
+    currentStage = STAGE_REGISTRY[meta.selectedStage] || STAGE_REGISTRY.sector_1;
     player = createPlayer();
     enemies = [];
     bullets = [];
     enemyBullets = [];
+    mines = [];
+    laserBeams = [];
     drops = [];
 
     gameTime = 0;
@@ -1218,8 +1841,16 @@
     totalDamageDealt = 0;
     bossSpawned3m = false;
     bossSpawned7m = false;
+    nextEndlessBossTime = 150;
+    nextEliteTime = 45;
     nextSwarmTime = 30;
     mapItemSpawnTimer = 0;
+    warningBannerTimer = 0;
+
+    const banner = document.getElementById('warning-banner');
+    if (banner) banner.classList.remove('active');
+
+    updateWeaponBarHUD();
 
     // Spawn 2 initial supply drops nearby to reward early navigation
     spawnRandomMapPowerup(300);
@@ -1363,9 +1994,17 @@
 
   function updateGame(dt) {
     gameTime += dt;
-    if (gameTime >= 480) {
+    if (gameTime >= currentStage.duration) {
       endGame(true);
       return;
+    }
+
+    if (warningBannerTimer > 0) {
+      warningBannerTimer -= dt;
+      if (warningBannerTimer <= 0) {
+        const banner = document.getElementById('warning-banner');
+        if (banner) banner.classList.remove('active');
+      }
     }
 
     // Dash Recharge Timer
@@ -1421,7 +2060,7 @@
           color: '#ffe600',
           alpha: 1,
           decay: 0.05,
-          glow: true
+          glow: false
         });
       }
     }
@@ -1486,10 +2125,69 @@
   updateMapItemSpawns(dt);
   updateWeapons(dt);
 
-    // Bullets
+    // Laser Beams Decay
+    for (let i = laserBeams.length - 1; i >= 0; i--) {
+      laserBeams[i].life -= dt;
+      if (laserBeams[i].life <= 0) laserBeams.splice(i, 1);
+    }
+
+    // Proximity Mines Check
+    for (let i = mines.length - 1; i >= 0; i--) {
+      const m = mines[i];
+      m.life -= dt;
+      let triggered = m.life <= 0;
+
+      if (!triggered) {
+        for (let j = 0; j < enemies.length; j++) {
+          const e = enemies[j];
+          const dx = e.x - m.x;
+          const dy = e.y - m.y;
+          if (Math.abs(dx) < 38 && Math.abs(dy) < 38 && dx * dx + dy * dy < 38 * 38) {
+            triggered = true;
+            break;
+          }
+        }
+      }
+
+      if (triggered) {
+        window.soundFX.explosion(false);
+        window.particleSystem.addExplosion(m.x, m.y, '#ff8800', 14);
+        const rSq = m.blastRadius * m.blastRadius;
+        for (let j = enemies.length - 1; j >= 0; j--) {
+          const e = enemies[j];
+          if (!e) continue;
+          const dx = e.x - m.x;
+          const dy = e.y - m.y;
+          if (Math.abs(dx) > m.blastRadius || Math.abs(dy) > m.blastRadius) continue;
+          if (dx * dx + dy * dy <= rSq) {
+            damageEnemy(e, m.damage);
+          }
+        }
+        mines.splice(i, 1);
+      }
+    }
+
+    // Bullets & Boomerangs
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
-      if (b.homing && b.target && b.target.hp > 0) {
+      if (b.isBoomerang) {
+        b.age += dt;
+        if (!b.returnPhase && b.age >= b.maxOutTime) {
+          b.returnPhase = true;
+          b.hitList.clear(); // Allow hitting enemies again on return!
+        }
+        if (b.returnPhase) {
+          const angle = Math.atan2(player.y - b.y, player.x - b.x);
+          b.vx = Math.cos(angle) * (b.speed * 1.25);
+          b.vy = Math.sin(angle) * (b.speed * 1.25);
+          const pdx = player.x - b.x;
+          const pdy = player.y - b.y;
+          if (pdx * pdx + pdy * pdy < 24 * 24) {
+            bullets.splice(i, 1);
+            continue;
+          }
+        }
+      } else if (b.homing && b.target && b.target.hp > 0) {
         const angle = Math.atan2(b.target.y - b.y, b.target.x - b.x);
         b.vx = Math.cos(angle) * b.speed;
         b.vy = Math.sin(angle) * b.speed;
@@ -1555,9 +2253,14 @@
         continue;
       }
 
+      if (e.slowTimer > 0) {
+        e.slowTimer -= dt;
+      }
+      const spdMult = e.slowTimer > 0 ? (e.slowFactor || 0.5) : 1.0;
+
       const angle = Math.atan2(player.y - e.y, player.x - e.x);
-      e.x += Math.cos(angle) * e.speed;
-      e.y += Math.sin(angle) * e.speed;
+      e.x += Math.cos(angle) * e.speed * spdMult;
+      e.y += Math.sin(angle) * e.speed * spdMult;
 
       if (e.hitFlash > 0) e.hitFlash -= dt;
 
@@ -1576,9 +2279,10 @@
       } else if (e.type === 'boss') {
         e.attackTimer += dt;
         e.spiralAngle += dt * 3.5;
-        if (e.attackTimer >= (e.isApex ? 0.35 : 0.7)) {
+        const fireInterval = e.isApex ? 0.35 : (e.bossTier === 'VULCAN' ? 0.45 : 0.65);
+        if (e.attackTimer >= fireInterval) {
           e.attackTimer = 0;
-          const bulletCount = e.isApex ? 6 : 4;
+          const bulletCount = e.isApex ? 6 : (e.bossTier === 'LEVIATHAN' ? 5 : 4);
           for (let b = 0; b < bulletCount; b++) {
             const bAngle = e.spiralAngle + (b * Math.PI * 2) / bulletCount;
             enemyBullets.push({
@@ -1592,11 +2296,17 @@
         }
       }
 
-      if (Math.hypot(player.x - e.x, player.y - e.y) < player.radius + e.radius) {
+      const hitR = player.radius + e.radius;
+      if (Math.abs(pdx) < hitR && Math.abs(pdy) < hitR && pdx * pdx + pdy * pdy < hitR * hitR) {
         // Titan reflect damage
         if (player.shipId === 'titan') {
           damageEnemy(e, 65 * player.damageMult);
           window.particleSystem.addExplosion(e.x, e.y, '#ffaa00', 8);
+        }
+        if (e.type === 'bomber') {
+          hurtPlayer(22);
+          killEnemy(e);
+          continue;
         }
         hurtPlayer(e.type === 'boss' ? 28 : 12);
       }
@@ -1619,7 +2329,7 @@
       if (dist < player.radius + 16) {
         if (d.type === 'exp') {
           window.soundFX.pickup();
-          player.exp += d.val;
+          player.exp += d.val * player.expMult;
           checkLevelUp();
         } else if (d.type === 'core') {
           window.soundFX.pickup();
@@ -1645,12 +2355,13 @@
           triggerNuke();
           window.particleSystem.addFloatingText(player.x, player.y, '💣 EMP 核爆全域殲滅!', '#ff0055');
         } else if (d.type === 'chest') {
-          sessionCores += 15;
+          const coreGain = Math.round(18 * player.coreMult);
+          sessionCores += coreGain;
           window.soundFX.fusion();
           for (let k = 0; k < 8; k++) {
             drops.push({ x: player.x + (Math.random() - 0.5) * 60, y: player.y + (Math.random() - 0.5) * 60, type: 'exp', val: 25 });
           }
-          window.particleSystem.addFloatingText(player.x, player.y, '📦 賽博補給箱 +15核心!', '#00ffcc');
+          window.particleSystem.addFloatingText(player.x, player.y, `📦 賽博補給箱 +${coreGain}核心!`, '#00ffcc');
         }
         drops.splice(i, 1);
       }
@@ -1685,7 +2396,7 @@
     const viewW = width / zoom;
     const viewH = height / zoom;
 
-    ctx.fillStyle = '#05070e';
+    ctx.fillStyle = currentStage ? currentStage.bgDark : '#05070e';
     ctx.fillRect(0, 0, viewW, viewH);
 
     const shake = window.particleSystem.screenShake;
@@ -1694,6 +2405,12 @@
     drawCyberBackground(cam, viewW, viewH);
     drawCyberStructures(cam, viewW, viewH);
     window.particleSystem.drawGridMotes(ctx, cam);
+
+    if (player && player.weapons.frost > 0) {
+      drawFrostField(cam);
+    }
+
+    drawMines(cam, viewW, viewH);
     drawDrops(cam);
 
     for (const t of player ? player.trail : []) {
@@ -1706,6 +2423,9 @@
     for (let i = 0; i < enemies.length; i++) {
       drawEnemy(enemies[i], cam, viewW, viewH);
     }
+
+    // Laser Beams
+    drawLaserBeams(cam);
 
     // Enemy Bullets (No shadowBlur for 60 FPS performance)
     ctx.fillStyle = '#ff0055';
@@ -1720,17 +2440,27 @@
       ctx.fill();
     }
 
-    // Player Bullets (Fast rendering without per-bullet shadowBlur)
+    // Player Bullets & Spinning Boomerangs (Fast rendering without per-bullet shadowBlur)
     ctx.shadowBlur = 0;
+    const now = Date.now();
     for (let i = 0; i < bullets.length; i++) {
       const b = bullets[i];
       const bx = b.x - cam.x;
       const by = b.y - cam.y;
-      if (bx < -20 || bx > viewW + 20 || by < -20 || by > viewH + 20) continue;
+      if (bx < -25 || bx > viewW + 25 || by < -25 || by > viewH + 25) continue;
       ctx.fillStyle = b.color;
-      ctx.beginPath();
-      ctx.arc(bx, by, b.radius, 0, Math.PI * 2);
-      ctx.fill();
+      if (b.isBoomerang) {
+        ctx.save();
+        ctx.translate(bx, by);
+        ctx.rotate(now * 0.018 + i);
+        ctx.fillRect(-b.radius, -3, b.radius * 2, 6);
+        ctx.fillRect(-3, -b.radius, 6, b.radius * 2);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(bx, by, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
 
     if (player && player.weapons.blades > 0) {
@@ -1787,6 +2517,8 @@
 
   function drawCyberBackground(cam, viewW, viewH) {
     const now = Date.now();
+    const gCol = currentStage ? currentStage.gridColor : '0, 243, 255';
+    const accentHex = currentStage ? currentStage.accentHex : '#00f3ff';
 
     // 1. Radiant Deep Space Nebulae (Parallax 0.18x)
     ctx.save();
@@ -1796,7 +2528,7 @@
       if (nx + neb.r < 0 || nx - neb.r > viewW || ny + neb.r < 0 || ny - neb.r > viewH) continue;
 
       const grad = ctx.createRadialGradient(nx, ny, 10, nx, ny, neb.r);
-      grad.addColorStop(0, neb.color);
+      grad.addColorStop(0, `rgba(${gCol}, 0.055)`);
       grad.addColorStop(1, 'rgba(5, 7, 14, 0)');
       ctx.fillStyle = grad;
       ctx.beginPath();
@@ -1843,7 +2575,7 @@
     const offsetY = -cam.y % gridSize;
 
     // Minor grid lines
-    ctx.strokeStyle = 'rgba(0, 243, 255, 0.055)';
+    ctx.strokeStyle = `rgba(${gCol}, 0.06)`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = offsetX; x < viewW + gridSize; x += gridSize) {
@@ -1860,7 +2592,7 @@
     const majorGrid = 240;
     const majorOffsetX = -cam.x % majorGrid;
     const majorOffsetY = -cam.y % majorGrid;
-    ctx.strokeStyle = 'rgba(0, 243, 255, 0.16)';
+    ctx.strokeStyle = `rgba(${gCol}, 0.18)`;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid) {
@@ -1877,7 +2609,7 @@
     const nodeGrid = 120;
     const nodeOffsetX = -cam.x % nodeGrid;
     const nodeOffsetY = -cam.y % nodeGrid;
-    ctx.fillStyle = 'rgba(0, 243, 255, 0.42)';
+    ctx.fillStyle = `rgba(${gCol}, 0.42)`;
     for (let x = nodeOffsetX; x < viewW + nodeGrid; x += nodeGrid) {
       for (let y = nodeOffsetY; y < viewH + nodeGrid; y += nodeGrid) {
         ctx.fillRect(x - 3, y - 0.5, 6, 1);
@@ -1887,7 +2619,7 @@
 
     // 5. Light Pulses sliding across major grid lines
     const pulseT = (now * 0.08) % 1200;
-    ctx.fillStyle = '#00f3ff';
+    ctx.fillStyle = accentHex;
     for (let x = majorOffsetX; x < viewW + majorGrid; x += majorGrid * 2) {
       const py = (pulseT + x * 2) % viewH;
       ctx.fillRect(x - 1.5, py - 6, 3, 12);
@@ -2138,6 +2870,78 @@
     }
   }
 
+  function drawFrostField(cam) {
+    const cfg = WEAPON_REGISTRY.frost.levels[player.weapons.frost - 1];
+    const px = player.x - cam.x;
+    const py = player.y - cam.y;
+    const pulse = Math.sin(Date.now() * 0.004) * 5;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 255, 220, 0.06)';
+    ctx.strokeStyle = 'rgba(0, 255, 220, 0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(px, py, cfg.radius + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMines(cam, viewW, viewH) {
+    const now = Date.now();
+    ctx.save();
+    ctx.shadowBlur = 0;
+    for (let i = 0; i < mines.length; i++) {
+      const m = mines[i];
+      const mx = m.x - cam.x;
+      const my = m.y - cam.y;
+      if (mx < -25 || mx > viewW + 25 || my < -25 || my > viewH + 25) continue;
+
+      const blink = Math.sin(now * 0.015 + i) > 0;
+      ctx.fillStyle = '#1a1008';
+      ctx.strokeStyle = '#ff8800';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mx, my, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = blink ? '#ff0044' : '#ffe600';
+      ctx.beginPath();
+      ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawLaserBeams(cam) {
+    if (laserBeams.length === 0) return;
+    ctx.save();
+    for (let i = 0; i < laserBeams.length; i++) {
+      const b = laserBeams[i];
+      const alpha = Math.max(0, b.life / b.maxLife);
+      ctx.globalAlpha = alpha;
+
+      // Outer laser aura
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth = b.width;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(b.x1 - cam.x, b.y1 - cam.y);
+      ctx.lineTo(b.x2 - cam.x, b.y2 - cam.y);
+      ctx.stroke();
+
+      // Inner white-hot core
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, b.width * 0.4);
+      ctx.beginPath();
+      ctx.moveTo(b.x1 - cam.x, b.y1 - cam.y);
+      ctx.lineTo(b.x2 - cam.x, b.y2 - cam.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function drawPlayer(cam) {
     const px = player.x - cam.x;
     const py = player.y - cam.y;
@@ -2168,6 +2972,26 @@
       ctx.lineTo(-8, 0);
       ctx.lineTo(-14, 14);
       ctx.lineTo(8, 14);
+      ctx.closePath();
+      ctx.fill();
+    } else if (player.shipId === 'valkyrie') {
+      ctx.beginPath();
+      ctx.moveTo(23, 0);
+      ctx.lineTo(-6, -15);
+      ctx.lineTo(-12, -5);
+      ctx.lineTo(-8, 0);
+      ctx.lineTo(-12, 5);
+      ctx.lineTo(-6, 15);
+      ctx.closePath();
+      ctx.fill();
+    } else if (player.shipId === 'frostbite') {
+      ctx.beginPath();
+      ctx.moveTo(20, 0);
+      ctx.lineTo(4, -12);
+      ctx.lineTo(-14, -10);
+      ctx.lineTo(-9, 0);
+      ctx.lineTo(-14, 10);
+      ctx.lineTo(4, 12);
       ctx.closePath();
       ctx.fill();
     } else {
@@ -2202,9 +3026,9 @@
     const ey = e.y - cam.y;
 
     // Frustum / Viewport culling: skip off-screen enemies completely
-    if (ex < -45 || ex > viewW + 45 || ey < -45 || ey > viewH + 45) return;
+    if (ex < -55 || ex > viewW + 55 || ey < -55 || ey > viewH + 55) return;
 
-    ctx.fillStyle = e.hitFlash > 0 ? '#ffffff' : e.color;
+    ctx.fillStyle = e.hitFlash > 0 ? '#ffffff' : (e.slowTimer > 0 && e.type !== 'boss' ? '#66f7ff' : e.color);
 
     if (e.type === 'drone') {
       ctx.beginPath();
@@ -2229,6 +3053,26 @@
       ctx.beginPath();
       ctx.arc(ex, ey, e.radius, 0, Math.PI * 2);
       ctx.fill();
+    } else if (e.type === 'bomber') {
+      // Spiky triangle/diamond bomber
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - e.radius * 1.2);
+      ctx.lineTo(ex + e.radius * 1.1, ey + e.radius * 0.8);
+      ctx.lineTo(ex - e.radius * 1.1, ey + e.radius * 0.8);
+      ctx.closePath();
+      ctx.fill();
+    } else if (e.type === 'splitter') {
+      // Hexagonal splitter cell
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = (k * Math.PI) / 3;
+        const hx = ex + Math.cos(a) * e.radius;
+        const hy = ey + Math.sin(a) * e.radius;
+        if (k === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
     } else if (e.type === 'boss') {
       ctx.save();
       ctx.shadowBlur = 14;
@@ -2242,12 +3086,20 @@
       ctx.stroke();
       ctx.restore();
 
-      const barW = 80;
+      const barW = 90;
       const barH = 7;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.fillRect(ex - barW / 2, ey - e.radius - 20, barW, barH);
-      ctx.fillStyle = '#ff0033';
-      ctx.fillRect(ex - barW / 2, ey - e.radius - 20, barW * (e.hp / e.maxHp), barH);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(ex - barW / 2, ey - e.radius - 22, barW, barH);
+      ctx.fillStyle = e.color;
+      ctx.fillRect(ex - barW / 2, ey - e.radius - 22, barW * Math.max(0, e.hp / e.maxHp), barH);
+    }
+
+    if (e.isElite) {
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(ex, ey, e.radius + 5, 0, Math.PI * 2);
+      ctx.stroke();
     }
   }
 
@@ -2422,5 +3274,7 @@
     muteBtn.textContent = isMuted ? '🔇 靜音' : '🔊 音效';
   });
 
+  currentStage = STAGE_REGISTRY[meta.selectedStage] || STAGE_REGISTRY.sector_1;
+  renderStageSelectGrid();
   requestAnimationFrame(gameLoop);
 })();

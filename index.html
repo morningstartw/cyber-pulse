@@ -701,6 +701,143 @@ html, body {
   white-space: nowrap;
 }
 
+/* Stage Selector Grid in Main Menu */
+.stage-select-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  letter-spacing: 1.5px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.stage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.stage-card {
+  background: rgba(14, 22, 40, 0.85);
+  border: 1.5px solid rgba(0, 243, 255, 0.25);
+  border-radius: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stage-card:hover {
+  border-color: rgba(0, 243, 255, 0.6);
+  background: rgba(20, 32, 58, 0.95);
+}
+
+.stage-card.active {
+  border-color: var(--neon-cyan);
+  background: rgba(0, 243, 255, 0.14);
+  box-shadow: 0 0 16px rgba(0, 243, 255, 0.35);
+}
+
+.stage-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+}
+
+.stage-card-name {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 800;
+  font-size: 12px;
+  color: #fff;
+}
+
+.stage-card-mult {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  color: #ffe600;
+  background: rgba(255, 230, 0, 0.15);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.stage-card-desc {
+  font-size: 11px;
+  color: #9cb2c9;
+  line-height: 1.25;
+}
+
+/* HUD Equipped Weapons Bar */
+#hud-weapons-bar {
+  position: absolute;
+  top: 52px;
+  left: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.weapon-slot-pill {
+  background: rgba(10, 15, 28, 0.85);
+  border: 1px solid rgba(0, 243, 255, 0.4);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.weapon-slot-pill.fusion {
+  border-color: #ffd700;
+  background: rgba(40, 30, 5, 0.9);
+  color: #ffd700;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+}
+
+/* Boss & Swarm Warning Banner */
+#warning-banner {
+  position: absolute;
+  top: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(255, 0, 60, 0.88), transparent);
+  border-top: 1.5px solid #ff0055;
+  border-bottom: 1.5px solid #ff0055;
+  padding: 6px 32px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+  font-size: 14px;
+  color: #fff;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #ff0055;
+  z-index: 25;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  white-space: nowrap;
+}
+
+#warning-banner.active {
+  opacity: 1;
+  animation: pulseWarning 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes pulseWarning {
+  from { transform: translateX(-50%) scale(0.98); }
+  to { transform: translateX(-50%) scale(1.04); }
+}
+
 /* Meta-progression Chip Shop */
 .chip-grid {
   display: flex;
@@ -892,6 +1029,33 @@ html, body {
     font-size: 12px;
     padding: 11px 4px;
   }
+  #hud-weapons-bar {
+    top: 40px;
+    left: 10px;
+    gap: 4px;
+  }
+  .weapon-slot-pill {
+    font-size: 9px;
+    padding: 1px 5px;
+  }
+  #warning-banner {
+    top: 68px;
+    font-size: 11px;
+    padding: 4px 16px;
+  }
+  .stage-grid {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .stage-card {
+    padding: 7px 8px;
+  }
+  .stage-card-name {
+    font-size: 11px;
+  }
+  .stage-card-desc {
+    font-size: 10px;
+  }
 }
 
 </style>
@@ -954,6 +1118,12 @@ html, body {
       </div>
     </header>
 
+    <!-- Equipped Weapons Status Bar -->
+    <div id="hud-weapons-bar"></div>
+
+    <!-- Boss & Swarm Alert Banner -->
+    <div id="warning-banner">⚠ 警告：首領級反應接近中 ⚠</div>
+
     <!-- Dynamic Touch Joystick for Mobile -->
     <div id="joystick-base" class="joystick-base"></div>
     <div id="joystick-stick" class="joystick-stick"></div>
@@ -966,14 +1136,19 @@ html, body {
 
     <!-- Main Menu Modal -->
     <section id="main-menu" class="modal-screen active">
-      <div class="menu-box">
+      <div class="menu-box" style="max-width: 540px;">
         <h1 class="hero-title">CYBER PULSE</h1>
-        <div class="hero-subtitle">OVERDRIVE PROTOCOL</div>
-        <p style="color: #9cb2c9; font-size: 14px; margin-bottom: 22px; line-height: 1.6;">
-          在無盡的賽博霓虹敵潮中生存 8 分鐘！<br>
+        <div class="hero-subtitle">OVERDRIVE V4.0 EXPANSION</div>
+        <p style="color: #9cb2c9; font-size: 13px; margin-bottom: 14px; line-height: 1.5;">
           電腦使用 <strong>WASD / 方向鍵</strong>，手機直接在<strong>螢幕任意處滑動</strong>走位。<br>
-          武器自動瞄準開火，拾取能量晶體解鎖超限進化。
+          收集晶體升級 10 種武裝並合成 5 大傳奇超武！
         </p>
+
+        <div class="stage-select-title">🗺️ 選擇出擊戰區 (STAGE SELECT)</div>
+        <div id="stage-select-grid" class="stage-grid">
+          <!-- Injected via JavaScript -->
+        </div>
+
         <button id="start-btn" class="btn-primary">▶ 啟動作戰協議</button>
         <div class="menu-btn-row">
           <button id="open-hangar-btn" class="btn-secondary">🚀 機庫整備</button>
@@ -1051,8 +1226,8 @@ html, body {
     </section>
   </div>
 
-  <script src="audio.js?v=3.5"></script>
-  <script src="particles.js?v=3.5"></script>
-  <script src="game.js?v=3.5"></script>
+  <script src="audio.js?v=4.0"></script>
+  <script src="particles.js?v=4.0"></script>
+  <script src="game.js?v=4.0"></script>
 </body>
 </html>

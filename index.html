@@ -838,6 +838,122 @@ html, body {
   to { transform: translateX(-50%) scale(1.04); }
 }
 
+/* PC-Only Secret Debug Console */
+#debug-panel {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  width: 310px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  background: rgba(6, 10, 20, 0.94);
+  border: 1.5px solid #39ff14;
+  border-radius: 10px;
+  box-shadow: 0 0 25px rgba(57, 255, 20, 0.35);
+  padding: 12px;
+  z-index: 500;
+  display: none;
+  font-family: 'Rajdhani', sans-serif;
+  pointer-events: auto;
+}
+
+#debug-panel.active {
+  display: block;
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(57, 255, 20, 0.35);
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+
+.debug-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+  color: #39ff14;
+  letter-spacing: 1px;
+}
+
+.debug-close-btn {
+  background: transparent;
+  border: 1px solid rgba(57, 255, 20, 0.5);
+  color: #39ff14;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Orbitron', sans-serif;
+}
+
+.debug-close-btn:hover {
+  background: #39ff14;
+  color: #000;
+}
+
+.debug-section-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  color: #8da4be;
+  margin: 8px 0 4px 0;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.debug-btn {
+  background: rgba(57, 255, 20, 0.1);
+  border: 1px solid rgba(57, 255, 20, 0.4);
+  color: #e2ffe0;
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.12s ease;
+}
+
+.debug-btn:hover {
+  background: #39ff14;
+  color: #000;
+  box-shadow: 0 0 10px #39ff14;
+}
+
+.debug-btn.active-toggle {
+  background: #39ff14;
+  color: #000;
+  font-weight: 900;
+  box-shadow: 0 0 12px #39ff14;
+}
+
+.debug-btn.gold {
+  border-color: rgba(255, 215, 0, 0.6);
+  background: rgba(255, 215, 0, 0.12);
+  color: #ffe600;
+}
+
+.debug-btn.gold:hover {
+  background: #ffd700;
+  color: #000;
+  box-shadow: 0 0 10px #ffd700;
+}
+
+/* Strictly disable Debug Panel on mobile / touch devices */
+@media (max-width: 768px), (pointer: coarse) {
+  #debug-panel {
+    display: none !important;
+  }
+}
+
 /* Meta-progression Chip Shop */
 .chip-grid {
   display: flex;
@@ -1224,10 +1340,51 @@ html, body {
         </div>
       </div>
     </section>
+
+    <!-- PC-Only Secret Debug Console (Type "debug" on keyboard to toggle) -->
+    <aside id="debug-panel">
+      <div class="debug-header">
+        <span class="debug-title">🛠 DEV DEBUG CONSOLE</span>
+        <button id="debug-close-btn" class="debug-close-btn">✕ 隱藏</button>
+      </div>
+
+      <div class="debug-section-label">機體狀態與資源 (PLAYER & META)</div>
+      <div class="debug-grid">
+        <button id="dbg-god-btn" class="debug-btn">🛡️ 無敵模式: OFF</button>
+        <button id="dbg-overdrive-btn" class="debug-btn">⚡ 無限狂暴: OFF</button>
+        <button id="dbg-lvlup-btn" class="debug-btn">⬆️ 升1級 (選卡)</button>
+        <button id="dbg-heal-btn" class="debug-btn">💚 滿血滿盾</button>
+        <button id="dbg-cores-btn" class="debug-btn gold">💎 +5000 核心</button>
+        <button id="dbg-unlockall-btn" class="debug-btn gold">🔓 全機體+滿晶片</button>
+      </div>
+
+      <div class="debug-section-label">一鍵滿級 / 超武控制 (WEAPONS)</div>
+      <div class="debug-grid" style="margin-bottom: 5px;">
+        <button id="dbg-maxweapons-btn" class="debug-btn gold">🌟 全10武+5超武全滿</button>
+        <button id="dbg-resetweapons-btn" class="debug-btn">🧹 清空重置武裝</button>
+      </div>
+      <div id="debug-weapons-grid" class="debug-grid">
+        <!-- Dynamically populated buttons for all 10 weapons & 5 fusions -->
+      </div>
+
+      <div class="debug-section-label">戰場召喚與測試 (SPAWNER & TIME)</div>
+      <div class="debug-grid">
+        <button id="dbg-elite-btn" class="debug-btn">👑 召喚黃金精英</button>
+        <button id="dbg-swarm-btn" class="debug-btn">🌊 召喚蟲群包圍</button>
+        <button id="dbg-boss-overlord" class="debug-btn">👹 首領:霓虹霸主</button>
+        <button id="dbg-boss-vulcan" class="debug-btn">🌋 首領:獄炎機神</button>
+        <button id="dbg-boss-leviathan" class="debug-btn">🌌 首領:虛空利維坦</button>
+        <button id="dbg-boss-apex" class="debug-btn gold">💀 首領:頂點核心</button>
+        <button id="dbg-items-btn" class="debug-btn">🎁 召喚全道具</button>
+        <button id="dbg-nuke-btn" class="debug-btn">💣 全場清怪</button>
+        <button id="dbg-time-btn" class="debug-btn">⏩ 時間 +60秒</button>
+        <button id="dbg-win-btn" class="debug-btn gold">🏆 直接通關結算</button>
+      </div>
+    </aside>
   </div>
 
-  <script src="audio.js?v=4.0"></script>
-  <script src="particles.js?v=4.0"></script>
-  <script src="game.js?v=4.0"></script>
+  <script src="audio.js?v=4.1"></script>
+  <script src="particles.js?v=4.1"></script>
+  <script src="game.js?v=4.1"></script>
 </body>
 </html>

@@ -221,14 +221,34 @@
   window.addEventListener('resize', resize);
   resize();
 
-  // Input Handling
+  // Input Handling & PC-Only Secret "debug" Key Sequence
   const keys = {};
+  const debugState = {
+    unlocked: false,
+    godMode: false,
+    infiniteOverdrive: false
+  };
+  let debugKeyBuffer = '';
+
+  function isPCDevice() {
+    return window.innerWidth > 768 && !window.matchMedia('(pointer: coarse)').matches;
+  }
+
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     keys[k] = true;
     window.soundFX.ensureContext();
     if (k === ' ' || k === 'shift') {
       triggerDash();
+    }
+
+    // Track secret "debug" code on PC only
+    if (k.length === 1 && k >= 'a' && k <= 'z' && isPCDevice()) {
+      debugKeyBuffer = (debugKeyBuffer + k).slice(-10);
+      if (debugKeyBuffer.endsWith('debug')) {
+        debugKeyBuffer = '';
+        toggleDebugConsole();
+      }
     }
   });
   window.addEventListener('keyup', (e) => {
@@ -1595,7 +1615,7 @@
   }
 
   function hurtPlayer(dmg) {
-    if (player.invulnTime > 0) return;
+    if (debugState.godMode || player.invulnTime > 0) return;
     window.soundFX.hit();
     window.particleSystem.triggerScreenShake(8, 0.25);
     player.invulnTime = 0.4;
@@ -1725,6 +1745,7 @@
       window.soundFX.fusion();
       player.weapons[key] = 1;
       updateWeaponBarHUD();
+    if (debugState.unlocked) renderDebugWeaponsGrid();
       return;
     }
 
@@ -1737,6 +1758,7 @@
     }
     player.weapons[key] = (player.weapons[key] || 0) + 1;
     updateWeaponBarHUD();
+    if (debugState.unlocked) renderDebugWeaponsGrid();
   }
 
   function updateWeaponBarHUD() {
@@ -1851,6 +1873,7 @@
     if (banner) banner.classList.remove('active');
 
     updateWeaponBarHUD();
+    if (debugState.unlocked) renderDebugWeaponsGrid();
 
     // Spawn 2 initial supply drops nearby to reward early navigation
     spawnRandomMapPowerup(300);
@@ -2048,6 +2071,9 @@
       }
     } else {
     // Powerup Timers & FX
+    if (debugState.infiniteOverdrive) {
+      player.overdriveTimer = 2.0;
+    }
     if (player.overdriveTimer > 0) {
       player.overdriveTimer -= dt;
       if (Math.random() < 0.45) {
@@ -3273,6 +3299,250 @@
     const isMuted = window.soundFX.toggleMute();
     muteBtn.textContent = isMuted ? '🔇 靜音' : '🔊 音效';
   });
+
+  // =========================================================
+  // PC-ONLY SECRET DEBUG CONSOLE (Type "debug" on keyboard)
+  // =========================================================
+  const debugPanel = document.getElementById('debug-panel');
+
+  function toggleDebugConsole() {
+    if (!isPCDevice() || !debugPanel) return;
+    debugState.unlocked = true;
+    const isNowActive = !debugPanel.classList.contains('active');
+    if (isNowActive) {
+      debugPanel.classList.add('active');
+      window.soundFX.fusion();
+      showWarningBanner('🛠 DEV DEBUG MODE ACTIVATED (PC ONLY)', 2.2);
+      renderDebugWeaponsGrid();
+    } else {
+      debugPanel.classList.remove('active');
+      window.soundFX.click();
+    }
+  }
+
+  function renderDebugWeaponsGrid() {
+    const grid = document.getElementById('debug-weapons-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    // Base Weapons (Click to cycle LV.0 -> LV.5)
+    for (const [wKey, wDef] of Object.entries(WEAPON_REGISTRY)) {
+      const lvl = player ? (player.weapons[wKey] || 0) : 0;
+      const btn = document.createElement('button');
+      btn.className = `debug-btn ${lvl > 0 ? 'active-toggle' : ''}`;
+      btn.textContent = `${wDef.icon} ${wDef.name.slice(0, 4)} (${lvl}/5)`;
+      btn.addEventListener('click', () => {
+        if (!player) return;
+        player.weapons[wKey] = lvl >= 5 ? 0 : lvl + 1;
+        if (wKey === 'shield' && player.weapons.shield > 0) {
+          const cfg = WEAPON_REGISTRY.shield.levels[player.weapons.shield - 1];
+          player.maxShield = cfg.maxShield;
+          player.shield = cfg.maxShield;
+        }
+        window.soundFX.click();
+        updateWeaponBarHUD();
+        renderDebugWeaponsGrid();
+      });
+      grid.appendChild(btn);
+    }
+
+    // Fusion Super Weapons (Click to toggle ON / OFF)
+    for (const [fKey, fDef] of Object.entries(FUSION_REGISTRY)) {
+      const active = player && player.weapons[fKey] > 0;
+      const btn = document.createElement('button');
+      btn.className = `debug-btn gold ${active ? 'active-toggle' : ''}`;
+      btn.textContent = `${fDef.icon} ${fDef.name.slice(0, 4)} [${active ? 'ON' : 'OFF'}]`;
+      btn.addEventListener('click', () => {
+        if (!player) return;
+        player.weapons[fKey] = active ? 0 : 1;
+        window.soundFX.fusion();
+        updateWeaponBarHUD();
+        renderDebugWeaponsGrid();
+      });
+      grid.appendChild(btn);
+    }
+  }
+
+  // Bind Debug Panel Buttons
+  const dbgCloseBtn = document.getElementById('debug-close-btn');
+  if (dbgCloseBtn) {
+    dbgCloseBtn.addEventListener('click', () => {
+      debugPanel.classList.remove('active');
+      window.soundFX.click();
+    });
+  }
+
+  const dbgGodBtn = document.getElementById('dbg-god-btn');
+  if (dbgGodBtn) {
+    dbgGodBtn.addEventListener('click', () => {
+      debugState.godMode = !debugState.godMode;
+      dbgGodBtn.textContent = `🛡️ 無敵模式: ${debugState.godMode ? 'ON' : 'OFF'}`;
+      dbgGodBtn.classList.toggle('active-toggle', debugState.godMode);
+      window.soundFX.click();
+    });
+  }
+
+  const dbgOverdriveBtn = document.getElementById('dbg-overdrive-btn');
+  if (dbgOverdriveBtn) {
+    dbgOverdriveBtn.addEventListener('click', () => {
+      debugState.infiniteOverdrive = !debugState.infiniteOverdrive;
+      dbgOverdriveBtn.textContent = `⚡ 無限狂暴: ${debugState.infiniteOverdrive ? 'ON' : 'OFF'}`;
+      dbgOverdriveBtn.classList.toggle('active-toggle', debugState.infiniteOverdrive);
+      window.soundFX.hypercharge();
+    });
+  }
+
+  const dbgLvlUpBtn = document.getElementById('dbg-lvlup-btn');
+  if (dbgLvlUpBtn) {
+    dbgLvlUpBtn.addEventListener('click', () => {
+      if (!player || gameState !== 'PLAYING') return;
+      player.level++;
+      window.soundFX.levelup();
+      showUpgradeModal();
+    });
+  }
+
+  const dbgHealBtn = document.getElementById('dbg-heal-btn');
+  if (dbgHealBtn) {
+    dbgHealBtn.addEventListener('click', () => {
+      if (!player) return;
+      player.hp = player.maxHp;
+      player.shield = player.maxShield;
+      window.soundFX.heal();
+      window.particleSystem.addHealAura(player.x, player.y);
+    });
+  }
+
+  const dbgCoresBtn = document.getElementById('dbg-cores-btn');
+  if (dbgCoresBtn) {
+    dbgCoresBtn.addEventListener('click', () => {
+      meta.cores += 5000;
+      sessionCores += 5000;
+      saveMeta();
+      window.soundFX.fusion();
+      if (document.getElementById('chip-modal').classList.contains('active')) renderChipRows();
+      if (document.getElementById('hangar-modal').classList.contains('active')) renderHangarGrid();
+    });
+  }
+
+  const dbgUnlockAllBtn = document.getElementById('dbg-unlockall-btn');
+  if (dbgUnlockAllBtn) {
+    dbgUnlockAllBtn.addEventListener('click', () => {
+      meta.unlockedShips = Object.keys(SHIP_REGISTRY);
+      chipDefs.forEach((c) => { meta.upgrades[c.id] = c.max; });
+      meta.cores += 9999;
+      saveMeta();
+      window.soundFX.fusion();
+      if (document.getElementById('chip-modal').classList.contains('active')) renderChipRows();
+      if (document.getElementById('hangar-modal').classList.contains('active')) renderHangarGrid();
+      showWarningBanner('🔓 已解鎖全部 5 台戰機與滿級晶片矩陣！', 2.5);
+    });
+  }
+
+  const dbgMaxWeaponsBtn = document.getElementById('dbg-maxweapons-btn');
+  if (dbgMaxWeaponsBtn) {
+    dbgMaxWeaponsBtn.addEventListener('click', () => {
+      if (!player) return;
+      for (const wKey of Object.keys(WEAPON_REGISTRY)) player.weapons[wKey] = 5;
+      for (const fKey of Object.keys(FUSION_REGISTRY)) player.weapons[fKey] = 1;
+      const cfg = WEAPON_REGISTRY.shield.levels[4];
+      player.maxShield = cfg.maxShield * 2.2;
+      player.shield = player.maxShield;
+      window.soundFX.fusion();
+      updateWeaponBarHUD();
+    if (debugState.unlocked) renderDebugWeaponsGrid();
+      renderDebugWeaponsGrid();
+    });
+  }
+
+  const dbgResetWeaponsBtn = document.getElementById('dbg-resetweapons-btn');
+  if (dbgResetWeaponsBtn) {
+    dbgResetWeaponsBtn.addEventListener('click', () => {
+      if (!player) return;
+      for (const wKey of Object.keys(WEAPON_REGISTRY)) player.weapons[wKey] = 0;
+      for (const fKey of Object.keys(FUSION_REGISTRY)) player.weapons[fKey] = 0;
+      player.weapons.blaster = 1;
+      window.soundFX.click();
+      updateWeaponBarHUD();
+    if (debugState.unlocked) renderDebugWeaponsGrid();
+      renderDebugWeaponsGrid();
+    });
+  }
+
+  const dbgEliteBtn = document.getElementById('dbg-elite-btn');
+  if (dbgEliteBtn) {
+    dbgEliteBtn.addEventListener('click', () => {
+      if (!player) return;
+      spawnRandomEnemy(true);
+      window.soundFX.shoot(500);
+    });
+  }
+
+  const dbgSwarmBtn = document.getElementById('dbg-swarm-btn');
+  if (dbgSwarmBtn) {
+    dbgSwarmBtn.addEventListener('click', () => {
+      if (!player) return;
+      spawnSwarmRing(36);
+    });
+  }
+
+  const bossBtns = [
+    ['dbg-boss-overlord', 'OVERLORD'],
+    ['dbg-boss-vulcan', 'VULCAN'],
+    ['dbg-boss-leviathan', 'LEVIATHAN'],
+    ['dbg-boss-apex', 'APEX']
+  ];
+  bossBtns.forEach(([id, tier]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('click', () => {
+        if (!player) return;
+        spawnBoss(tier);
+      });
+    }
+  });
+
+  const dbgItemsBtn = document.getElementById('dbg-items-btn');
+  if (dbgItemsBtn) {
+    dbgItemsBtn.addEventListener('click', () => {
+      if (!player) return;
+      const types = ['heal', 'magnet', 'overdrive', 'chest', 'nuke'];
+      types.forEach((t, idx) => {
+        const a = (idx / types.length) * Math.PI * 2;
+        drops.push({
+          x: player.x + Math.cos(a) * 110,
+          y: player.y + Math.sin(a) * 110,
+          type: t,
+          isMapItem: true,
+          spawnTime: gameTime
+        });
+      });
+      window.soundFX.pickup();
+    });
+  }
+
+  const dbgNukeBtn = document.getElementById('dbg-nuke-btn');
+  if (dbgNukeBtn) {
+    dbgNukeBtn.addEventListener('click', () => {
+      if (!player) return;
+      triggerNuke();
+    });
+  }
+
+  const dbgTimeBtn = document.getElementById('dbg-time-btn');
+  if (dbgTimeBtn) {
+    dbgTimeBtn.addEventListener('click', () => {
+      gameTime += 60;
+      window.soundFX.click();
+    });
+  }
+
+  const dbgWinBtn = document.getElementById('dbg-win-btn');
+  if (dbgWinBtn) {
+    dbgWinBtn.addEventListener('click', () => {
+      if (gameState === 'PLAYING') endGame(true);
+    });
+  }
 
   currentStage = STAGE_REGISTRY[meta.selectedStage] || STAGE_REGISTRY.sector_1;
   renderStageSelectGrid();

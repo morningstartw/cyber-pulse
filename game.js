@@ -1184,6 +1184,7 @@
     window.soundFX.click();
     const modal = document.getElementById('hangar-modal');
     renderHangarGrid();
+    document.getElementById('main-menu').classList.remove('active');
     modal.classList.add('active');
   }
 
@@ -1240,10 +1241,18 @@
   }
 
   // Chip Shop UI
-  function openChipShop() {
+  let chipShopSource = 'menu'; // 'menu' or 'settlement'
+
+  function openChipShop(source = 'menu') {
+    chipShopSource = source;
     window.soundFX.click();
     const modal = document.getElementById('chip-modal');
     renderChipRows();
+    if (source === 'settlement') {
+      document.getElementById('settlement-modal').classList.remove('active');
+    } else {
+      document.getElementById('main-menu').classList.remove('active');
+    }
     modal.classList.add('active');
   }
 
@@ -2320,13 +2329,31 @@
   document.getElementById('close-hangar-btn').addEventListener('click', () => {
     window.soundFX.click();
     document.getElementById('hangar-modal').classList.remove('active');
+    document.getElementById('main-menu').classList.add('active');
   });
-  document.getElementById('open-chip-btn').addEventListener('click', openChipShop);
-  document.getElementById('settlement-chip-btn').addEventListener('click', openChipShop);
+  document.getElementById('open-chip-btn').addEventListener('click', () => openChipShop('menu'));
+  document.getElementById('settlement-chip-btn').addEventListener('click', () => openChipShop('settlement'));
   document.getElementById('close-chip-btn').addEventListener('click', () => {
     window.soundFX.click();
     document.getElementById('chip-modal').classList.remove('active');
+    if (chipShopSource === 'settlement') {
+      document.getElementById('settlement-modal').classList.add('active');
+    } else {
+      document.getElementById('main-menu').classList.add('active');
+    }
   });
+
+  const settlementMenuBtn = document.getElementById('settlement-menu-btn');
+  if (settlementMenuBtn) {
+    settlementMenuBtn.addEventListener('click', () => {
+      window.soundFX.click();
+      document.getElementById('settlement-modal').classList.remove('active');
+      document.getElementById('chip-modal').classList.remove('active');
+      document.getElementById('hangar-modal').classList.remove('active');
+      document.getElementById('main-menu').classList.add('active');
+      gameState = 'MENU';
+    });
+  }
 
   const muteBtn = document.getElementById('mute-btn');
   muteBtn.addEventListener('click', () => {

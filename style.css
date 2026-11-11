@@ -449,6 +449,18 @@ html, body {
   pointer-events: auto;
 }
 
+#chip-modal, #hangar-modal {
+  z-index: 200;
+}
+
+#upgrade-modal {
+  z-index: 150;
+}
+
+#settlement-modal {
+  z-index: 120;
+}
+
 /* Upgrade Cards Container */
 .modal-title {
   font-family: 'Orbitron', sans-serif;

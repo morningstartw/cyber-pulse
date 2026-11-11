@@ -460,6 +460,18 @@ html, body {
   pointer-events: auto;
 }
 
+#chip-modal, #hangar-modal {
+  z-index: 200;
+}
+
+#upgrade-modal {
+  z-index: 150;
+}
+
+#settlement-modal {
+  z-index: 120;
+}
+
 /* Upgrade Cards Container */
 .modal-title {
   font-family: 'Orbitron', sans-serif;
@@ -1031,13 +1043,16 @@ html, body {
         </div>
 
         <button id="replay-btn" class="btn-primary">🔄 再次出擊</button>
-        <button id="settlement-chip-btn" class="btn-secondary">⚙ 強化晶片天賦</button>
+        <div class="menu-btn-row">
+          <button id="settlement-chip-btn" class="btn-secondary">⚙ 晶片天賦</button>
+          <button id="settlement-menu-btn" class="btn-secondary">🏠 返回主選單</button>
+        </div>
       </div>
     </section>
   </div>
 
-  <script src="audio.js?v=3.3"></script>
-  <script src="particles.js?v=3.3"></script>
-  <script src="game.js?v=3.3"></script>
+  <script src="audio.js?v=3.4"></script>
+  <script src="particles.js?v=3.4"></script>
+  <script src="game.js?v=3.4"></script>
 </body>
 </html>

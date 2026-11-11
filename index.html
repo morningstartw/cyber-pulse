@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#00f3ff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>CYBER PULSE: OVERDRIVE</title>
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- CRT / Vignette Effect -->
+    <div class="overlay-vignette"></div>
+
+    <!-- EXP Progress Bar -->
+    <div id="exp-bar-container">
+      <div id="exp-bar-fill"></div>
+    </div>
+
+    <!-- Top In-Game HUD -->
+    <header id="hud">
+      <div class="hud-group">
+        <div id="level-badge">LV.<span id="level-val">1</span></div>
+        <div class="hud-panel">
+          <span class="hud-label">裝甲</span>
+          <div id="hud-hp-box">
+            <div id="hud-hp-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-group">
+        <div class="hud-panel">
+          <span class="hud-label">生存時間</span>
+          <span id="timer-val" class="hud-val">00:00</span>
+        </div>
+      </div>
+
+      <div class="hud-group">
+        <div class="hud-panel">
+          <span class="hud-label">殲滅</span>
+          <span id="kill-val" class="hud-val">0</span>
+        </div>
+        <div class="hud-panel">
+          <span class="hud-label">核心</span>
+          <span id="core-val" class="hud-val">0</span>
+        </div>
+        <button id="mute-btn" class="hud-btn">🔊 音效</button>
+      </div>
+    </header>
+
+    <!-- Dynamic Touch Joystick for Mobile -->
+    <div id="joystick-base" class="joystick-base"></div>
+    <div id="joystick-stick" class="joystick-stick"></div>
+
+    <!-- Mobile Dash Button -->
+    <div id="mobile-dash-btn">
+      <div class="dash-icon">⚡</div>
+      <div class="dash-label">DASH</div>
+    </div>
+
+    <!-- Main Menu Modal -->
+    <section id="main-menu" class="modal-screen active">
+      <div class="menu-box">
+        <h1 class="hero-title">CYBER PULSE</h1>
+        <div class="hero-subtitle">OVERDRIVE PROTOCOL</div>
+        <p style="color: #9cb2c9; font-size: 14px; margin-bottom: 22px; line-height: 1.6;">
+          在無盡的賽博霓虹敵潮中生存 8 分鐘！<br>
+          電腦使用 <strong>WASD / 方向鍵</strong>，手機直接在<strong>螢幕任意處滑動</strong>走位。<br>
+          武器自動瞄準開火，拾取能量晶體解鎖超限進化。
+        </p>
+        <button id="start-btn" class="btn-primary">▶ 啟動作戰協議</button>
+        <button id="open-hangar-btn" class="btn-secondary" style="margin-bottom: 8px;">🚀 機庫整備 (更換戰機)</button>
+        <button id="open-chip-btn" class="btn-secondary">⚙ 晶片矩陣天賦 (局外強化)</button>
+      </div>
+    </section>
+
+    <!-- Level-Up Upgrade Modal -->
+    <section id="upgrade-modal" class="modal-screen">
+      <h2 class="modal-title">超限核心進化</h2>
+      <div class="modal-sub">選擇一項作戰模組載入機體系統</div>
+      <div id="upgrade-cards-grid" class="upgrade-grid">
+        <!-- Injected via JavaScript -->
+      </div>
+    </section>
+
+    <!-- Ship Hangar Selection Modal -->
+    <section id="hangar-modal" class="modal-screen">
+      <div class="menu-box" style="max-width: 820px;">
+        <h2 class="modal-title" style="font-size: 24px;">戰術機庫整備</h2>
+        <div class="modal-sub">選擇出擊戰機，每款機體具備獨特專屬特性與初始武裝</div>
+        <div id="hangar-grid-container" class="ship-grid">
+          <!-- Injected via JavaScript -->
+        </div>
+        <button id="close-hangar-btn" class="btn-secondary">確認返回</button>
+      </div>
+    </section>
+
+    <!-- Meta-progression Chip Shop Modal -->
+    <section id="chip-modal" class="modal-screen">
+      <div class="menu-box" style="max-width: 580px;">
+        <h2 class="modal-title" style="font-size: 22px;">機體晶片矩陣</h2>
+        <div class="modal-sub">
+          可用核心晶片：<span id="chip-currency-display" style="color: var(--neon-cyan); font-weight: 900; font-family: 'Orbitron'; font-size: 18px;">0</span>
+        </div>
+        <div id="chip-list-container" class="chip-grid">
+          <!-- Injected via JavaScript -->
+        </div>
+        <button id="close-chip-btn" class="btn-secondary">返回</button>
+      </div>
+    </section>
+
+    <!-- Settlement / Game Over / Victory Modal -->
+    <section id="settlement-modal" class="modal-screen">
+      <div class="menu-box">
+        <h2 id="settlement-title" class="hero-title" style="font-size: 24px;">作戰結算</h2>
+        <div id="settlement-sub" class="hero-subtitle">資料封裝完畢</div>
+        
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-title">生存時間</div>
+            <div id="stat-time" class="stat-num">00:00</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-title">殲滅敵機</div>
+            <div id="stat-kills" class="stat-num">0</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-title">最終等級</div>
+            <div id="stat-level" class="stat-num">LV.1</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-title">獲取核心</div>
+            <div id="stat-cores" class="stat-num">+0</div>
+          </div>
+        </div>
+
+        <button id="replay-btn" class="btn-primary">🔄 再次出擊</button>
+        <button id="settlement-chip-btn" class="btn-secondary">⚙ 強化晶片天賦</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="audio.js"></script>
+  <script src="particles.js"></script>
+  <script src="game.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
